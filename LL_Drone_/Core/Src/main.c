@@ -457,6 +457,7 @@ int main(void)
 		  if(counter>200){
 			  /*printf("%d\t%d\t%d\r\n",angle.getmpuaccx,angle.getmpuaccy,angle.getmpuaccz);
 			  printf("%.2f\t%.2f\t%.2f\n\n\r",angle.f_gyx,angle.f_gyy,angle.f_gyz);*/
+			  printf("yaw:%.2f\r\n",status_data.set_yaw);
 			  printf("pitch:%.2f\r\nroll:%.2f\n\n\r",status_data.pitch,status_data.roll);
 			  counter=0;
 		  }
@@ -657,7 +658,7 @@ int main(void)
 		  if(timer[0]<1015)
 			  status_data.throttle=1000;
 		  else
-			  status_data.throttle=(((timer[0]-1000)*70)/100)+1000;
+			  status_data.throttle=(((timer[0]-1000)*65)/100)+1000;
 
 		  //---------------------------------------------------------------------- pitch
 		  if(timer[1]>1489 && timer[1]<1511)

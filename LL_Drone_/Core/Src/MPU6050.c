@@ -148,7 +148,7 @@ void MPU_Angcali(MPU6050* mpu6050,ANGLE* angle){
 void MPU_Complementary_Filter(ANGLE* angle,uint8_t* raw_data){
 	float accdegx,accdegy,acctotvec;
 	float pitch, roll;
-	float gyx, gyy;
+	//float gyx, gyy;
 	float sin_pitch,cos_pitch,tan_roll;
 
 	int16_t temp[3];
@@ -174,8 +174,8 @@ void MPU_Complementary_Filter(ANGLE* angle,uint8_t* raw_data){
   	cos_pitch=cosf(pitch/57.29577951);
   	tan_roll=tanf(roll/57.29577951);
 
-  	gyx = angle->f_gyx + (sin_pitch * angle->f_gyy + cos_pitch * angle->f_gyz) * tan_roll;
-  	gyy = cos_pitch * angle->f_gyy - sin_pitch * angle->f_gyz;
+  	angle->f_gyx = angle->f_gyx + (sin_pitch * angle->f_gyy + cos_pitch * angle->f_gyz) * tan_roll;
+  	angle->f_gyy = cos_pitch * angle->f_gyy - sin_pitch * angle->f_gyz;
 
 
   	acctotvec=sqrtf((float)(angle->getmpuaccx*angle->getmpuaccx/100
@@ -184,8 +184,8 @@ void MPU_Complementary_Filter(ANGLE* angle,uint8_t* raw_data){
   	accdegx=asinf((float)angle->getmpuaccx/acctotvec)*(57.29577951);
   	accdegy=asinf((float)angle->getmpuaccy/acctotvec)*(57.29577951);
 
-  	angle->pitch=(alpha)*(angle->pitch-(gyy)*dt)+(1-alpha)*(accdegx);
-  	angle->roll=(alpha)*(angle->roll+(gyx)*dt)+(1-alpha)*(accdegy);
+  	angle->pitch=(alpha)*(angle->pitch-(angle->f_gyy)*dt)+(1-alpha)*(accdegx);
+  	angle->roll=(alpha)*(angle->roll+(angle->f_gyx)*dt)+(1-alpha)*(accdegy);
 
 
 }
