@@ -216,7 +216,7 @@ void load_mag_para(){
 }
 
 void print_mag_para(){
-	printf("\n\rMag_PID\r\n");
+	printf("\n\rMag_Para\r\n");
 	printf("=================================\r\n");
 	printf("mag_offset_x:%.4f\r\n",hmc5883.offset_x);
 	printf("mag_offset_y:%.4f\r\n",hmc5883.offset_y);
@@ -228,7 +228,72 @@ void print_mag_para(){
 	printf("=================================\n\n\r");
 }
 
+//=============================================================================================================================== GPS
+void save_GPS_para(){
+	uint32_t temp;
+	uint8_t save_buf[gps_flash_size];
+	uint8_t i,j;
+
+	for(i=0;i<gps_para_size;i++){
+		temp=*(unsigned*)&(gps_para[i]);
+		for(j=0;j<4;j++){
+			save_buf[4*i+j]=0x000000ff&temp;
+			temp=temp>>8;
+		}
+	}
+	flash_sector_erase(SPI1,gps_flash_address);
+	flash_write(SPI1,gps_flash_address,save_buf,gps_flash_size);
+
+}
+
+void load_GPS_para(){
+	uint32_t temp;
+	uint8_t load_buf[gps_flash_size];
+	uint8_t i,j;
+
+	flash_read(SPI1,gps_flash_address,load_buf,gps_flash_size);
+	for(i=0;i<gps_para_size;i++){
+		temp=0;
+		for(j=0;j<4;j++){
+			temp+=load_buf[4*i+j]<<(j*8);
+		}
+		gps_para[i]=*(float*)&temp;
+	}
+}
+void show_GPS_para(){
+	float data[gps_para_size];
+	uint32_t temp;
+	uint8_t load_buf[gps_flash_size];
+	uint8_t i,j;
+
+	flash_read(SPI1,gps_flash_address,load_buf,gps_flash_size);
+	for(i=0;i<gps_para_size;i++){
+		temp=0;
+		for(j=0;j<4;j++){
+			temp+=load_buf[4*i+j]<<(j*8);
+		}
+		data[i]=*(float*)&temp;
+	}
+
+	printf("\n\rGPS_PID_Check\r\n");
+	printf("=================================\r\n");
+	printf("gp:%.4f\r\n",data[0]);
+	printf("gi:%.4f\r\n",data[1]);
+	printf("gd:%.4f\r\n",data[2]);
+	printf("=================================\n\n\r");
+}
+
+void print_GPS_para(){
+	printf("\n\rGPS_PID\r\n");
+	printf("=================================\r\n");
+	printf("gp:%.4f\r\n",gps_p);
+	printf("gi:%.4f\r\n",gps_i);
+	printf("gd:%.4f\r\n",gps_d);
+	printf("=================================\n\n\r");
+}
+
 //===============================================================================================================================
+
 
 
 void COMMAND_Decode(UART_COMMAND* command){
@@ -429,15 +494,41 @@ void COMMAND_Decode(UART_COMMAND* command){
 
 //========================================================================================================================== gps decoding
 	else if(command->command_buf[0]=='g'){
-		temp_float=atoff(&command->command_buf[3]);
+		temp_float=atoff(&command->command_buf[2]);
 		if(command->command_buf[1]=='p'){
-
+			gps_p=temp_float;
+			printf("gp: %.4f\n\r",gps_p);
 		}
 		else if(command->command_buf[1]=='i'){
-
+			gps_i=temp_float;
+			printf("gi: %.4f\n\r",gps_i);
 		}
 		else if(command->command_buf[1]=='d'){
+			gps_d=temp_float;
+			printf("gd: %.4f\n\r",gps_d);
+		}
 
+		//print all
+		else if(command->command_buf[1]=='A'){
+			printf("gA\r\n");
+			print_GPS_para();
+		}
+		//check flash data
+		else if(command->command_buf[1]=='C'){
+			printf("gC\r\n");
+			show_GPS_para();
+		}
+		//load flash to memory
+		else if(command->command_buf[1]=='L'){
+			printf("gL\r\n");
+			load_GPS_para();
+			print_GPS_para();
+		}
+		//save data
+		else if(command->command_buf[1]=='S'){
+			printf("gS\r\n");
+			save_GPS_para();
+			print_GPS_para();
 		}
 		else{
 			error_command=1;
@@ -445,7 +536,7 @@ void COMMAND_Decode(UART_COMMAND* command){
 	}
 //========================================================================================================================== baro decoding
 	else if(command->command_buf[0]=='b'){
-		temp_float=atoff(&command->command_buf[3]);
+		temp_float=atoff(&command->command_buf[2]);
 		if(command->command_buf[1]=='p'){
 
 		}

@@ -26,7 +26,6 @@
 #include <stdio.h>
 #include <math.h>
 #include "MPU6050.h"
-#include "HMC5883.h"
 #include "I2C.h"
 #include "util.h"
 /* USER CODE END Includes */
@@ -98,6 +97,8 @@ uint8_t condition_angle=0;
 uint8_t condition_uart4=0;
 uint8_t condition_pid=0;
 uint8_t condition_mag_baro=0;
+uint8_t condition_gps=0;
+
 
 
 /* USER CODE END 0 */
@@ -165,12 +166,15 @@ int main(void)
   uint8_t is_mag_cali=0;
   uint8_t first_data=1;
 
-
+  float mag_max[3]={0,};
+  float mag_min[3]={0,};
   uint32_t battery_sum=0;
   uint16_t adc_val=0;
   uint16_t battery_arr[200]={0,},battery_val=0;
   uint8_t battery_count=0;
   uint8_t battery_adc_led_off=0;
+  //----------------------------- mode
+  uint8_t normal_mode_setting=0;
 
   //----------------------------- mpu6050
   uint8_t mpu_reg_address=0;
@@ -178,6 +182,16 @@ int main(void)
   //----------------------------- mag baro
   uint8_t mag_baro=0;
 
+  //----------------------------- GPS
+  uint8_t condition_gps_2ms=0;
+
+  uint8_t gps_set_pos=0;
+  uint8_t gps_pitch_pass_point=0,gps_roll_pass_point=0;
+  float gps_set_lat=0.0,gps_set_lon=0.0;
+  float pitch_p, pre_pitch_p=0.0, pitch_p_speed, temp_pitch_p, temp_pitch_speed;
+  float roll_p, pre_roll_p=0.0, roll_p_speed, temp_roll_p, temp_roll_speed;
+
+  float gps_set_pitch,gps_set_roll;
   //-----------------------------
 
 
@@ -190,6 +204,13 @@ int main(void)
   hmc5883.scale_y=1.0;
   hmc5883.scale_z=1.01;
   save_mag_para();*/
+
+  /*gps_p=1.3;
+  gps_i=0.0;
+  gps_d=5;
+  save_GPS_para();*/
+
+
 
   LL_GPIO_SetOutputPin(GPIOE,LL_GPIO_PIN_7);
   LL_GPIO_SetOutputPin(GPIOE,LL_GPIO_PIN_8);
@@ -213,11 +234,6 @@ int main(void)
   LL_DMA_SetPeriphAddress(DMA1,LL_DMA_STREAM_2,(uint32_t)(&UART4->DR));
   LL_DMA_SetDataLength(DMA1,LL_DMA_STREAM_2,33);
   DMA1->LIFCR=0x003D0000;	//DMA1 STREAM2 CLEAR ALL FLAG
-  /*LL_DMA_ClearFlag_TE2(DMA1);
-  LL_DMA_ClearFlag_HT2(DMA1);
-  LL_DMA_ClearFlag_TC2(DMA1);
-  LL_DMA_ClearFlag_DME2(DMA1);
-  LL_DMA_ClearFlag_FE2(DMA1);*/
   LL_DMA_EnableStream(DMA1,LL_DMA_STREAM_2);
   LL_USART_EnableDMAReq_RX(UART4);
   LL_USART_EnableIT_IDLE(UART4);
@@ -225,6 +241,9 @@ int main(void)
 //----------------------------------------------------------------------------------- HMC5883
   init_HMC(&hmc5883,I2C3);
   HMC_Default_Reg(&hmc5883);
+
+//----------------------------------------------------------------------------------- GPS
+  init_GPS(&gps_raw_message,USART2,DMA1,LL_DMA_STREAM_5);
 
 //----------------------------------------------------------------------------------- mpu6050 I2C
   I2C_Receive_DMA_init(&(mpu6050.I2C),&DMA,I2C2,DMA1,LL_DMA_STREAM_3,(uint32_t)i2c_dma_buf,LL_I2C_DMA_GetRegAddr(I2C2),14);
@@ -239,6 +258,7 @@ int main(void)
 //----------------------------------------------------------------------------------- load para
   load_pid_para();
   load_mag_para();
+  load_GPS_para();
 
 //----------------------------------------------------------------------------------- pwm timer
   LL_TIM_EnableIT_UPDATE(TIM2);
@@ -279,7 +299,7 @@ int main(void)
 		  //---------------------------------------------------------------------- 2ms condition
 		  if(counter_2ms>1){
 			  condition_mag_baro=1;
-
+			  condition_gps_2ms=1;
 			  counter_2ms=0;
 		  }
 
@@ -340,54 +360,52 @@ int main(void)
 
 		  if(is_mag_cali){
 			  //printf("cc\r\n");
-			  if(1){
-				  float mag_max[3]={0,};
-				  float mag_min[3]={0,};
-				  float avg_delta[4]={0,};
 
-				  HMC_Mag_Read(&hmc5883);
-				  if(first_data){
-					  mag_max[0]=mag_min[0]=hmc5883.mx;
-					  mag_max[1]=mag_min[1]=hmc5883.my;
-					  mag_max[2]=mag_min[2]=hmc5883.mz;
-					  first_data=0;
-				  }
-				  else{
-					  if(mag_max[0]<hmc5883.mx){
-						  mag_max[0]=hmc5883.mx;
-					  }
-					  else if(mag_min[0]>hmc5883.mx){
-						  mag_min[0]=hmc5883.mx;
-					  }
+			  float avg_delta[4]={0,};
 
-					  if(mag_max[1]<hmc5883.my){
-						  mag_max[1]=hmc5883.my;
-					  }
-					  else if(mag_min[1]>hmc5883.my){
-						  mag_min[1]=hmc5883.my;
-					  }
-
-					  if(mag_max[2]<hmc5883.mz){
-						  mag_max[2]=hmc5883.mz;
-					  }
-					  else if(mag_min[2]>hmc5883.mz){
-						  mag_min[2]=hmc5883.mz;
-					  }
-					  hmc5883.offset_x=(mag_max[0]+mag_min[0])/2;
-					  hmc5883.offset_y=(mag_max[1]+mag_min[1])/2;
-					  hmc5883.offset_z=(mag_max[2]+mag_min[2])/2;
-
-					  avg_delta[0]=(mag_max[0]-mag_min[0])/2;
-					  avg_delta[1]=(mag_max[1]-mag_min[1])/2;
-					  avg_delta[2]=(mag_max[2]-mag_min[2])/2;
-
-					  avg_delta[3]=(avg_delta[0]+avg_delta[1]+avg_delta[2])/3;
-
-					  hmc5883.scale_x=avg_delta[3]/avg_delta[0];
-					  hmc5883.scale_y=avg_delta[3]/avg_delta[1];
-					  hmc5883.scale_z=avg_delta[3]/avg_delta[2];
-				  }
+			  HMC_Mag_Read(&hmc5883);
+			  if(first_data){
+				  mag_max[0]=mag_min[0]=hmc5883.mx;
+				  mag_max[1]=mag_min[1]=hmc5883.my;
+				  mag_max[2]=mag_min[2]=hmc5883.mz;
+				  first_data=0;
 			  }
+			  else{
+				  if(mag_max[0]<hmc5883.mx){
+					  mag_max[0]=hmc5883.mx;
+				  }
+				  else if(mag_min[0]>hmc5883.mx){
+					  mag_min[0]=hmc5883.mx;
+				  }
+
+				  if(mag_max[1]<hmc5883.my){
+					  mag_max[1]=hmc5883.my;
+				  }
+				  else if(mag_min[1]>hmc5883.my){
+					  mag_min[1]=hmc5883.my;
+				  }
+
+				  if(mag_max[2]<hmc5883.mz){
+					  mag_max[2]=hmc5883.mz;
+				  }
+				  else if(mag_min[2]>hmc5883.mz){
+					  mag_min[2]=hmc5883.mz;
+				  }
+				  hmc5883.offset_x=(mag_max[0]+mag_min[0])/2;
+				  hmc5883.offset_y=(mag_max[1]+mag_min[1])/2;
+				  hmc5883.offset_z=(mag_max[2]+mag_min[2])/2;
+
+				  avg_delta[0]=(mag_max[0]-mag_min[0])/2;
+				  avg_delta[1]=(mag_max[1]-mag_min[1])/2;
+				  avg_delta[2]=(mag_max[2]-mag_min[2])/2;
+
+				  avg_delta[3]=(avg_delta[0]+avg_delta[1]+avg_delta[2])/3;
+
+				  hmc5883.scale_x=avg_delta[3]/avg_delta[0];
+				  hmc5883.scale_y=avg_delta[3]/avg_delta[1];
+				  hmc5883.scale_z=avg_delta[3]/avg_delta[2];
+			  }
+
 		  }
 
 		  //--------------------------------------------------------------------- command decode
@@ -436,12 +454,11 @@ int main(void)
 		  }
 
 
-
 	  }
 
-//========================================================================================================================= ANGLE
+//=========================================================================================================================================================== ANGLE
 	  else if(condition_angle && DMA.i2c_receive_dma){
-		  //LL_GPIO_TogglePin(GPIOE,LL_GPIO_PIN_10);
+		  //LL_GPIO_TogglePin(GPIOE,LL_GPIO_PIN_2);
 		  //LL_GPIO_SetOutputPin(GPIOE,LL_GPIO_PIN_2);
 		  MPU_Complementary_Filter(&angle,i2c_dma_buf);
 
@@ -468,7 +485,7 @@ int main(void)
 		  //LL_GPIO_ResetOutputPin(GPIOE,LL_GPIO_PIN_2);
 	  }
 
-//========================================================================================================================= PID
+//=========================================================================================================================================================== PID
 	  else if(condition_pid){
 		  float input_yaw;
 		  float yaw_limit;
@@ -483,35 +500,20 @@ int main(void)
 		  DUAL_PID(&roll_para, status_data.set_roll, status_data.roll, angle.f_gyx);
 
 		  //---------------------------------------------------------------------------------------------------------------------- yaw
-		  if(status_data.set_yaw>0){
-			  if(status_data.yaw>status_data.set_yaw || (status_data.set_yaw-180)>status_data.yaw){		//yaw_angle ccw(positive value)
-				  if(status_data.yaw>0){
-					  input_yaw=status_data.yaw;
-				  }
-				  else{
-					  input_yaw=status_data.yaw+360.0;
-				  }
-			  }
-			  else{		//yaw_angle cw(negative value)
-				  input_yaw=status_data.yaw;
-			  }
+		  if(yaw_para.rate_i_mem<200 && yaw_para.rate_i_mem>-200){
+			  yaw_para.rate_i_mem+=status_data.dif_yaw * pid_dt * yaw_para.para_i;
 		  }
 		  else{
-			  if(status_data.set_yaw>status_data.yaw || status_data.yaw>(status_data.set_yaw+180)){		//yaw_angle cw(negative value)
-				  if(status_data.yaw>0){
-					  input_yaw=status_data.yaw-360.0;
-				  }
-				  else{
-					  input_yaw=status_data.yaw;
-				  }
+			  if(status_data.dif_yaw>199.0 && status_data.dif_yaw<0){
+				  yaw_para.rate_i_mem+=status_data.dif_yaw * pid_dt * yaw_para.para_i;
 			  }
-			  else{		//yaw_angle ccw(positive value)
-				  input_yaw=status_data.yaw;
+			  else if(status_data.dif_yaw<-199.0 && status_data.dif_yaw>0){
+				  yaw_para.rate_i_mem+=status_data.dif_yaw * pid_dt * yaw_para.para_i;
 			  }
 		  }
+		  yaw_para.pid_result = yaw_para.para_p*status_data.dif_yaw + yaw_para.para_d*(status_data.dif_yaw-status_data.pre_dif_yaw) + yaw_para.rate_i_mem;
 
 
-		  NORMAL_PID(&yaw_para,status_data.set_yaw,input_yaw);
 		  yaw_limit=((float)(status_data.throttle-1000)*0.7)+50.0;
 		  if(yaw_para.pid_result>yaw_limit)
 			  yaw_para.pid_result=yaw_limit;
@@ -521,12 +523,12 @@ int main(void)
 		  //---------------------------------------------------------------------------------------------------------------------- motor update
 
 		  if(status_data.throttle>1000){
-			  motor[0]=status_data.throttle+(int32_t)(pitch_para.dual_pid_result+roll_para.dual_pid_result-yaw_para.pid_result);	//ccw
-			  motor[1]=status_data.throttle+(int32_t)(pitch_para.dual_pid_result-roll_para.dual_pid_result+yaw_para.pid_result);	//cw
-			  motor[2]=status_data.throttle+(int32_t)(roll_para.dual_pid_result+yaw_para.pid_result);	//cw
-			  motor[3]=status_data.throttle+(int32_t)(-roll_para.dual_pid_result-yaw_para.pid_result);	//ccw
-			  motor[4]=status_data.throttle+(int32_t)(-pitch_para.dual_pid_result+roll_para.dual_pid_result-yaw_para.pid_result);	//ccw
-			  motor[5]=status_data.throttle+(int32_t)(-pitch_para.dual_pid_result-roll_para.dual_pid_result+yaw_para.pid_result);	//cw
+			  motor[0]=status_data.throttle+(int32_t)(pitch_para.dual_pid_result+roll_para.dual_pid_result+yaw_para.pid_result);	//ccw
+			  motor[1]=status_data.throttle+(int32_t)(pitch_para.dual_pid_result-roll_para.dual_pid_result-yaw_para.pid_result);	//cw
+			  motor[2]=status_data.throttle+(int32_t)(roll_para.dual_pid_result-yaw_para.pid_result);	//cw
+			  motor[3]=status_data.throttle+(int32_t)(-roll_para.dual_pid_result+yaw_para.pid_result);	//ccw
+			  motor[4]=status_data.throttle+(int32_t)(-pitch_para.dual_pid_result+roll_para.dual_pid_result+yaw_para.pid_result);	//ccw
+			  motor[5]=status_data.throttle+(int32_t)(-pitch_para.dual_pid_result-roll_para.dual_pid_result-yaw_para.pid_result);	//cw
 
 			  for(uint8_t i=0;i<6;i++){
 				  if(motor[i]<1000)
@@ -542,12 +544,15 @@ int main(void)
 
 		  //motor_counter++;
 		  if(motor_counter>80){
-			  /*printf("0:%d\t1:%d\t2:%d\r\n",motor[0],motor[1],motor[2]);
-			  printf("3:%d\t4:%d\t5:%d\n\n\r",motor[3],motor[4],motor[5]);*/
-			  printf("%.2f\r\n",yaw_limit);
-			  printf("%.2f\r\n",status_data.set_yaw-input_yaw);
+			  printf("%.2f\r\n",status_data.dif_yaw);
+			  printf("%.2f\n\n\r",status_data.yaw);
+			  //printf("%.2f\n\n\r",status_data.pre_dif_yaw);
+			  //printf("0:%d\t1:%d\t2:%d\r\n",motor[0],motor[1],motor[2]);
+			  //printf("3:%d\t4:%d\t5:%d\n\n\r",motor[3],motor[4],motor[5]);
+			  //printf("%.2f\r\n",yaw_limit);
+			  //printf("%.2f\r\n",status_data.set_yaw-input_yaw);
 			  //printf("pitch:%.2f\troll:%.2f\r\n",status_data.pitch,status_data.roll);
-			  printf("set:%.2f\t%.2f\t%.2f\n\n\r",status_data.set_pitch,status_data.set_roll,status_data.set_yaw);
+			  //printf("set:%.2f\t%.2f\t%.2f\n\n\r",status_data.set_pitch,status_data.set_roll,status_data.set_yaw);
 			  motor_counter=0;
 		  }
 
@@ -555,11 +560,15 @@ int main(void)
 		  //LL_GPIO_ResetOutputPin(GPIOB,LL_GPIO_PIN_1);
 	  }
 
-//========================================================================================================================= mag, baro
+//=========================================================================================================================================================== mag, baro
 	  else if(condition_mag_baro){
 		  if(mag_baro==0){
+			  //--------------------------------- hmc5883.h
+
+			  //---------------------------------
 			  float radpitch, radroll;
 			  float xh,yh;
+			  float dif_yaw;
 
 			  HMC_Mag_Read(&hmc5883);
 			  hmc5883.mx=(hmc5883.mx-hmc5883.offset_x)*hmc5883.scale_x;
@@ -573,57 +582,54 @@ int main(void)
 			  yh=hmc5883.my*cosf(radroll) + hmc5883.mz*sinf(radroll);
 			  status_data.yaw=atan2f(-yh,-xh)*(57.29577951);
 
+			  status_data.pre_dif_yaw=status_data.dif_yaw;
+
+			  if(status_data.set_yaw>0){
+				  if(status_data.yaw>status_data.set_yaw || (status_data.set_yaw-180)>status_data.yaw){		//yaw_angle ccw(positive value)
+					  if(status_data.yaw>0){
+						  dif_yaw=status_data.yaw-status_data.set_yaw;
+					  }
+					  else{
+						  dif_yaw=360-status_data.set_yaw+status_data.yaw;
+					  }
+				  }
+				  else{		//yaw_angle cw(negative value)
+					  dif_yaw=status_data.yaw-status_data.set_yaw;
+				  }
+			  }
+			  else{
+				  if(status_data.set_yaw>status_data.yaw || status_data.yaw>(status_data.set_yaw+180)){		//yaw_angle cw(negative value)
+					  if(status_data.yaw>0){
+						  dif_yaw=(status_data.yaw-status_data.set_yaw)-360;
+					  }
+					  else{
+						  dif_yaw=status_data.yaw-status_data.set_yaw;
+					  }
+				  }
+				  else{		//yaw_angle ccw(positive value)
+					  dif_yaw=status_data.yaw-status_data.set_yaw;
+				  }
+			  }
+
+			  yaw_mean+=dif_yaw;
+			  yaw_mean-=yaw_mean_arr[yaw_mean_count];
+			  yaw_mean_arr[yaw_mean_count]=dif_yaw;
+			  yaw_mean_count++;
+			  if(yaw_mean_count==YAW_MEAN_ARR_NUM)
+				  yaw_mean_count=0;
+
+			  status_data.dif_yaw=yaw_mean/YAW_MEAN_ARR_NUM;
+
+
 			  //mag_counter++;
 			  if(mag_counter>50){
+				  printf("%.2f %.2f\r\n",status_data.dif_yaw,dif_yaw);
 				  printf("%.2f\n\n\r",status_data.yaw);
 				  //printf("%.2f\t%.2f\t%.2f\r\n",hmc5883.mx,hmc5883.my,hmc5883.mz);
 				  //printf("%.2f\t%.2f\t%.2f\r\n",hmc5883.offset_x,hmc5883.offset_y,hmc5883.offset_z);
 				  //printf("%.2f\t%.2f\t%.2f\n\n\r",hmc5883.scale_x,hmc5883.scale_y,hmc5883.scale_z);
 				  mag_counter=0;
 			  }
-
-			  /*if(first_data){
-				  mag_max[0]=mag_min[0]=hmc5883.mx;
-				  mag_max[1]=mag_min[1]=hmc5883.my;
-				  mag_max[2]=mag_min[2]=hmc5883.mz;
-				  first_data=0;
-			  }
-
-			  else{
-				  if(mag_max[0]<hmc5883.mx){
-					  mag_max[0]=hmc5883.mx;
-				  }
-				  else if(mag_min[0]>hmc5883.mx){
-					  mag_min[0]=hmc5883.mx;
-				  }
-
-				  if(mag_max[1]<hmc5883.my){
-					  mag_max[1]=hmc5883.my;
-				  }
-				  else if(mag_min[1]>hmc5883.my){
-					  mag_min[1]=hmc5883.my;
-				  }
-
-				  if(mag_max[2]<hmc5883.mz){
-					  mag_max[2]=hmc5883.mz;
-				  }
-				  else if(mag_min[2]>hmc5883.mz){
-					  mag_min[2]=hmc5883.mz;
-				  }
-				  hmc5883.offset_x=(mag_max[0]+mag_min[0])/2;
-				  hmc5883.offset_y=(mag_max[1]+mag_min[1])/2;
-				  hmc5883.offset_z=(mag_max[2]+mag_min[2])/2;
-
-				  avg_delta[0]=(mag_max[0]-mag_min[0])/2;
-				  avg_delta[1]=(mag_max[1]-mag_min[1])/2;
-				  avg_delta[2]=(mag_max[2]-mag_min[2])/2;
-
-				  avg_delta[3]=(avg_delta[0]+avg_delta[1]+avg_delta[2])/3;
-
-				  hmc5883.scale_x=avg_delta[3]/avg_delta[0];
-				  hmc5883.scale_y=avg_delta[3]/avg_delta[1];
-				  hmc5883.scale_z=avg_delta[3]/avg_delta[2];
-			  }*/
 
 			  mag_baro=1;
 		  }
@@ -635,7 +641,176 @@ int main(void)
 		  condition_mag_baro=0;
 	  }
 
-//========================================================================================================================= ibus receiver
+//=========================================================================================================================================================== GPS
+	  else if(condition_gps){
+
+		  //-----------------------------
+		  float lat_dif=0.0,lon_dif=0.0;
+		  float distance=0.0;
+		  float lonlat_angle=0.0,angle_dif=0.0;
+
+		  //-----------------------------
+		  //LL_GPIO_TogglePin(GPIOE,LL_GPIO_PIN_8);
+
+		  LL_DMA_DisableStream(DMA1,LL_DMA_STREAM_5);
+		  DMA1->HIFCR=0x00000F00;	// STREAM5 CLEAR ALL FLAG
+		  LL_DMA_EnableStream(DMA1,LL_DMA_STREAM_5);
+		  GPS_Parsing(&gps_raw_message,&gps_data);
+
+		  //gps_data.sec_lat=15487.75;	//test
+		  //gps_data.sec_lon=10226.63;
+
+		  if(gps_data.sec_lat>0.1 && gps_data.sec_lon>0.1){
+			  LL_GPIO_TogglePin(GPIOE,LL_GPIO_PIN_8);
+
+			  if(Drone_mode==GPS){			// GPS mode SET
+				  if(gps_set_pos==0){
+					  gps_set_lat=gps_data.sec_lat;
+					  gps_set_lon=gps_data.sec_lon;
+					  normal_mode_setting=0;
+					  gps_set_pos=1;
+				  }
+				  else{
+					  lon_dif=gps_set_lon-gps_data.sec_lon;
+					  lat_dif=gps_set_lat-gps_data.sec_lat;
+					  distance=sqrtf((lon_dif*lon_dif) + (lat_dif*lat_dif));
+					  lonlat_angle=atan2f(lat_dif,lon_dif)*57.29577951;
+					  angle_dif=lonlat_angle-status_data.yaw;
+
+					  pitch_p=distance*cosf(angle_dif*0.01745329252)*50;
+					  pitch_p_speed=pitch_p-pre_pitch_p;
+
+					  if(pitch_p*pre_pitch_p<0.0){
+						  gps_pitch_pass_point=1;
+						  temp_pitch_speed=pitch_p_speed;
+					  }
+					  else{
+						  gps_pitch_pass_point=0;
+						  temp_pitch_speed=pitch_p_speed;
+					  }
+					  pre_pitch_p=pitch_p;
+					  if(pitch_p>gps_pitch_p_bound){
+						  pitch_p=gps_pitch_p_bound;
+					  }
+					  else if(pitch_p<-gps_pitch_p_bound){
+						  pitch_p=-gps_pitch_p_bound;
+					  }
+					  if(pitch_p_speed>gps_pitch_speed_bound){
+						  pitch_p_speed=gps_pitch_speed_bound;
+					  }
+					  else if(pitch_p_speed<-gps_pitch_speed_bound){
+						  pitch_p_speed=-gps_pitch_speed_bound;
+					  }
+
+					  roll_p=distance*sinf(angle_dif*0.01745329252)*50;
+					  roll_p_speed=roll_p-pre_roll_p;
+					  if(roll_p*pre_roll_p<0.0){
+						  gps_roll_pass_point=1;
+						  temp_roll_speed=roll_p_speed;
+					  }
+					  else{
+						  gps_roll_pass_point=0;
+						  temp_roll_speed=roll_p_speed;
+					  }
+					  pre_roll_p=roll_p;
+
+					  if(roll_p>gps_roll_p_bound){
+						  roll_p=gps_roll_p_bound;
+					  }
+					  else if(roll_p<-gps_roll_p_bound){
+						  roll_p=-gps_roll_p_bound;
+					  }
+					  if(roll_p_speed>gps_roll_speed_bound){
+						  roll_p_speed=gps_roll_speed_bound;
+					  }
+					  else if(roll_p_speed<-gps_roll_speed_bound){
+						  roll_p_speed=-gps_roll_speed_bound;
+					  }
+
+					  temp_pitch_p=pitch_p;
+					  temp_roll_p=roll_p;
+				  }
+			  }
+
+		  }
+
+		  condition_gps=0;
+	  }
+	  else if(Drone_mode==GPS && gps_set_pos && condition_gps_2ms){
+
+		  gps_set_pitch=(temp_pitch_p*gps_p)+(temp_pitch_speed)*gps_d;
+		  gps_set_roll=(temp_roll_p*gps_p)+(temp_roll_speed)*gps_d;
+
+		  temp_pitch_p+=(temp_pitch_speed/100);
+		  temp_roll_p+=(temp_roll_speed/100);
+
+		  if(gps_pitch_pass_point==1){
+			  temp_pitch_speed-=(pitch_p_speed/86);
+		  }
+		  if(gps_roll_pass_point==1){
+			  temp_roll_speed-=(roll_p_speed/86);
+		  }
+
+		  if(temp_pitch_p>gps_pitch_p_bound){
+			  temp_pitch_p=gps_pitch_p_bound;
+		  }
+		  else if(temp_pitch_p<-gps_pitch_p_bound){
+			  temp_pitch_p=-gps_pitch_p_bound;
+		  }
+
+		  if(temp_roll_p>gps_roll_p_bound){
+			  temp_roll_p=gps_roll_p_bound;
+		  }
+		  else if(temp_roll_p<-gps_roll_p_bound){
+			  temp_roll_p=-gps_roll_p_bound;
+		  }
+
+		  if(gps_set_pitch>gps_pitch_bound)
+			  gps_set_pitch=gps_pitch_bound;
+		  else if(gps_set_pitch<-gps_pitch_bound)
+			  gps_set_pitch=-gps_pitch_bound;
+
+		  if(gps_set_roll>gps_roll_bound)
+			  gps_set_roll=gps_roll_bound;
+		  else if(gps_set_roll<-gps_roll_bound)
+			  gps_set_roll=-gps_roll_bound;
+
+
+
+		  status_data.set_pitch+=gps_set_pitch;
+		  if(status_data.set_pitch>17)
+			  status_data.set_pitch=17;
+		  else if(status_data.set_pitch<-17)
+			  status_data.set_pitch=-17;
+
+		  status_data.set_roll-=gps_set_roll;
+		  if(status_data.set_roll>17)
+			  status_data.set_roll=17;
+		  else if(status_data.set_roll<-17)
+			  status_data.set_roll=-17;
+
+		  condition_gps_2ms=0;
+	  }
+
+	  else if(Drone_mode==Normal && normal_mode_setting==0){
+		  gps_set_lat=0.0;
+		  gps_set_lon=0.0;
+
+		  pitch_p=0.0;
+		  roll_p=0.0;
+
+		  pre_pitch_p=0;
+		  pre_roll_p=0;
+
+		  gps_set_pitch=0;
+		  gps_set_roll=0;
+
+		  gps_set_pos=0;
+		  normal_mode_setting=1;
+	  }
+
+
+//=========================================================================================================================================================== ibus receiver
 	  if(condition_uart4){
 		  LL_DMA_DisableStream(DMA1,LL_DMA_STREAM_2);
 		  DMA1->LIFCR=0x003D0000;	//DMA1 STREAM2 CLEAR ALL FLAG
@@ -701,6 +876,12 @@ int main(void)
 			  status_data.set_yaw=status_data.yaw;
 		  }
 
+		  //---------------------------------------------------------------------- mode
+		  if(timer[5]<1300)
+			  Drone_mode=Normal;
+		  else if(timer[5]>1900)
+			  Drone_mode=GPS;
+
 		  //----------------------------------------------------------------------
 		  //uart_counter++;
 		  if(uart_counter>100){
@@ -710,7 +891,7 @@ int main(void)
 		  condition_uart4=0;
 	  }
 
-//=========================================================================================================================
+//===========================================================================================================================================================
 
 
     /* USER CODE END WHILE */
@@ -1360,10 +1541,35 @@ static void MX_USART2_UART_Init(void)
   GPIO_InitStruct.Alternate = LL_GPIO_AF_7;
   LL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
+  /* USART2 DMA Init */
+  
+  /* USART2_RX Init */
+  LL_DMA_SetChannelSelection(DMA1, LL_DMA_STREAM_5, LL_DMA_CHANNEL_4);
+
+  LL_DMA_SetDataTransferDirection(DMA1, LL_DMA_STREAM_5, LL_DMA_DIRECTION_PERIPH_TO_MEMORY);
+
+  LL_DMA_SetStreamPriorityLevel(DMA1, LL_DMA_STREAM_5, LL_DMA_PRIORITY_LOW);
+
+  LL_DMA_SetMode(DMA1, LL_DMA_STREAM_5, LL_DMA_MODE_NORMAL);
+
+  LL_DMA_SetPeriphIncMode(DMA1, LL_DMA_STREAM_5, LL_DMA_PERIPH_NOINCREMENT);
+
+  LL_DMA_SetMemoryIncMode(DMA1, LL_DMA_STREAM_5, LL_DMA_MEMORY_INCREMENT);
+
+  LL_DMA_SetPeriphSize(DMA1, LL_DMA_STREAM_5, LL_DMA_PDATAALIGN_BYTE);
+
+  LL_DMA_SetMemorySize(DMA1, LL_DMA_STREAM_5, LL_DMA_MDATAALIGN_BYTE);
+
+  LL_DMA_DisableFifoMode(DMA1, LL_DMA_STREAM_5);
+
+  /* USART2 interrupt Init */
+  NVIC_SetPriority(USART2_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(USART2_IRQn);
+
   /* USER CODE BEGIN USART2_Init 1 */
 
   /* USER CODE END USART2_Init 1 */
-  USART_InitStruct.BaudRate = 115200;
+  USART_InitStruct.BaudRate = 9600;
   USART_InitStruct.DataWidth = LL_USART_DATAWIDTH_8B;
   USART_InitStruct.StopBits = LL_USART_STOPBITS_1;
   USART_InitStruct.Parity = LL_USART_PARITY_NONE;
@@ -1396,6 +1602,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream3_IRQn interrupt configuration */
   NVIC_SetPriority(DMA1_Stream3_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
   NVIC_EnableIRQ(DMA1_Stream3_IRQn);
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream5_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream5_IRQn);
 
 }
 
