@@ -5,14 +5,11 @@
  *      Author: perSec
  */
 #include "main.h"
-
 #include "spi_flash.h"
-
 #include "PID.h"
-
 #include "HMC5883.h"
-
 #include "GPS.h"
+#include "mode.h"
 
 #ifndef INC_UTIL_H_
 #define INC_UTIL_H_
@@ -52,17 +49,11 @@ typedef struct{
 	uint8_t command_receive;
 }UART_COMMAND;
 
-typedef enum{
-	Normal=0,
-	GPS=1
-}Mode;
-
 
 UART_COMMAND command;
 
 STATUS_DATA status_data;
 
-Mode Drone_mode;
 
 
 int32_t motor[6];
