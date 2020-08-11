@@ -25,6 +25,7 @@
 /* USER CODE BEGIN Includes */
 #include "I2C.h"
 #include "MPU6050.h"
+#include "HMC5883.h"
 #include "util.h"
 /* USER CODE END Includes */
 
@@ -63,10 +64,12 @@
 /* USER CODE BEGIN EV */
 
 extern MPU6050 mpu6050;
-extern I2C_DMA_struct DMA;
+extern I2C_DMA_struct mpu6050_DMA;
+extern HMC5883 hmc5883;
+extern I2C_DMA_struct i2c3_DMA;
 
 extern uint8_t condition_1ms;
-extern uint8_t condition_uart4;
+extern uint8_t condition_receiver;
 
 extern uint8_t condition_pid;
 
@@ -211,11 +214,26 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief This function handles DMA1 stream1 global interrupt.
+  */
+void DMA1_Stream1_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Stream1_IRQn 0 */
+
+  /* USER CODE END DMA1_Stream1_IRQn 0 */
+  
+  /* USER CODE BEGIN DMA1_Stream1_IRQn 1 */
+
+  /* USER CODE END DMA1_Stream1_IRQn 1 */
+}
+
+/**
   * @brief This function handles DMA1 stream2 global interrupt.
   */
 void DMA1_Stream2_IRQHandler(void)
 {
   /* USER CODE BEGIN DMA1_Stream2_IRQn 0 */
+	DMA_Stream_irq(&hmc5883.i2c,&i2c3_DMA);
 
   /* USER CODE END DMA1_Stream2_IRQn 0 */
   
@@ -230,7 +248,7 @@ void DMA1_Stream2_IRQHandler(void)
 void DMA1_Stream3_IRQHandler(void)
 {
   /* USER CODE BEGIN DMA1_Stream3_IRQn 0 */
-	DMA_Stream_irq(&(mpu6050.I2C),&DMA);
+	DMA_Stream_irq(&(mpu6050.I2C),&mpu6050_DMA);
   /* USER CODE END DMA1_Stream3_IRQn 0 */
   
   /* USER CODE BEGIN DMA1_Stream3_IRQn 1 */
@@ -302,7 +320,7 @@ void TIM2_IRQHandler(void)
 void I2C2_EV_IRQHandler(void)
 {
   /* USER CODE BEGIN I2C2_EV_IRQn 0 */
-	I2C_DMA_irq(&(mpu6050.I2C),&DMA);
+	I2C_DMA_irq(&(mpu6050.I2C),&mpu6050_DMA);
   /* USER CODE END I2C2_EV_IRQn 0 */
   
   /* USER CODE BEGIN I2C2_EV_IRQn 1 */
@@ -352,20 +370,33 @@ void USART2_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles UART4 global interrupt.
+  * @brief This function handles USART3 global interrupt.
   */
-void UART4_IRQHandler(void)
+void USART3_IRQHandler(void)
 {
-  /* USER CODE BEGIN UART4_IRQn 0 */
-	//receiver data
-	if(LL_USART_IsActiveFlag_IDLE(UART4)){
-		LL_USART_ClearFlag_IDLE(UART4);
-		condition_uart4=1;
+  /* USER CODE BEGIN USART3_IRQn 0 */
+	if(LL_USART_IsActiveFlag_IDLE(USART3)){
+		LL_USART_ClearFlag_IDLE(USART3);
+		condition_receiver=1;
 	}
-  /* USER CODE END UART4_IRQn 0 */
-  /* USER CODE BEGIN UART4_IRQn 1 */
+  /* USER CODE END USART3_IRQn 0 */
+  /* USER CODE BEGIN USART3_IRQn 1 */
 
-  /* USER CODE END UART4_IRQn 1 */
+  /* USER CODE END USART3_IRQn 1 */
+}
+
+/**
+  * @brief This function handles I2C3 event interrupt.
+  */
+void I2C3_EV_IRQHandler(void)
+{
+  /* USER CODE BEGIN I2C3_EV_IRQn 0 */
+	I2C_DMA_irq(&(hmc5883.i2c),&i2c3_DMA);
+  /* USER CODE END I2C3_EV_IRQn 0 */
+  
+  /* USER CODE BEGIN I2C3_EV_IRQn 1 */
+
+  /* USER CODE END I2C3_EV_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */

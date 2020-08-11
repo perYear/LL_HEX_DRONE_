@@ -56,7 +56,6 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM11_Init(void);
-static void MX_UART4_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_SPI1_Init(void);
@@ -64,6 +63,7 @@ static void MX_I2C2_Init(void);
 static void MX_I2C3_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 #define SBI(address, ab) ( address |= (0x01<<ab) )
 #define CBI(address, ab) ( address &= ~(0x01<<ab) )
@@ -85,16 +85,15 @@ int _write(int file,uint8_t* p, int len){
 
 
 
-I2C_DMA_struct DMA;
+I2C_DMA_struct mpu6050_DMA;
+I2C_DMA_struct i2c3_DMA;
 
 
-uint8_t i2c_dma_buf[14];
-uint8_t uart4_dma_buf[33];
 
 uint8_t condition_1ms=0;
 //uint8_t condition_2ms=0;
 uint8_t condition_angle=0;
-uint8_t condition_uart4=0;
+uint8_t condition_receiver=0;
 uint8_t condition_pid=0;
 uint8_t condition_mag_baro=0;
 uint8_t condition_gps=0;
@@ -141,7 +140,6 @@ int main(void)
   MX_DMA_Init();
   MX_USART1_UART_Init();
   MX_TIM11_Init();
-  MX_UART4_Init();
   MX_TIM2_Init();
   MX_TIM4_Init();
   MX_SPI1_Init();
@@ -149,6 +147,7 @@ int main(void)
   MX_I2C3_Init();
   MX_USART2_UART_Init();
   MX_ADC1_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
   //----------------------------- test counter
@@ -178,8 +177,12 @@ int main(void)
 
   //----------------------------- mpu6050
   uint8_t mpu_reg_address=0;
+  uint8_t mpu6050_dma_buf[14];
 
-  //----------------------------- mag baro
+
+  //----------------------------- i2c3 mag baro
+  uint8_t mag_reg_address=0;
+  uint8_t mag_dma_buf[6];
   uint8_t mag_baro=0;
 
   //----------------------------- GPS
@@ -192,8 +195,11 @@ int main(void)
   float roll_p, pre_roll_p=0.0, roll_p_speed, temp_roll_p, temp_roll_speed;
 
   float gps_set_pitch,gps_set_roll;
-  //-----------------------------
 
+  //----------------------------- receiver
+  uint8_t receiver_dma_buf[33];
+
+  //-----------------------------
 
 
   /*hmc5883.offset_x=70.31;
@@ -230,30 +236,36 @@ int main(void)
   LL_ADC_REG_StartConversionSWStart(ADC1);
 
 //----------------------------------------------------------------------------------- ibus receiver
-  LL_DMA_SetMemoryAddress(DMA1,LL_DMA_STREAM_2,(uint32_t)uart4_dma_buf);
-  LL_DMA_SetPeriphAddress(DMA1,LL_DMA_STREAM_2,(uint32_t)(&UART4->DR));
-  LL_DMA_SetDataLength(DMA1,LL_DMA_STREAM_2,33);
-  DMA1->LIFCR=0x003D0000;	//DMA1 STREAM2 CLEAR ALL FLAG
-  LL_DMA_EnableStream(DMA1,LL_DMA_STREAM_2);
-  LL_USART_EnableDMAReq_RX(UART4);
-  LL_USART_EnableIT_IDLE(UART4);
+  LL_DMA_SetMemoryAddress(DMA1,LL_DMA_STREAM_1,(uint32_t)receiver_dma_buf);
+  LL_DMA_SetPeriphAddress(DMA1,LL_DMA_STREAM_1,(uint32_t)(&USART3->DR));
+  LL_DMA_SetDataLength(DMA1,LL_DMA_STREAM_1,33);
+  //DMA1->LIFCR=0x003D0000;	//DMA1 STREAM2 CLEAR ALL FLAG
+  DMA1->LIFCR=0x00000F40;	//DMA1 STREAM1 CLEAR ALL FLAG
+  LL_DMA_EnableStream(DMA1,LL_DMA_STREAM_1);
+  LL_USART_EnableDMAReq_RX(USART3);
+  LL_USART_EnableIT_IDLE(USART3);
 
 //----------------------------------------------------------------------------------- HMC5883
   init_HMC(&hmc5883,I2C3);
+  I2C_Receive_DMA_init(&hmc5883.i2c,&i2c3_DMA,I2C3,DMA1,LL_DMA_STREAM_2);
   HMC_Default_Reg(&hmc5883);
+
+  mag_reg_address=0x03;
+  I2C_Transmit(&hmc5883.i2c,hmc5883.magneto_address,&mag_reg_address,1);
+  I2C_Receive_DMA(&hmc5883.i2c,&i2c3_DMA,hmc5883.magneto_address,(uint32_t)mag_dma_buf,LL_I2C_DMA_GetRegAddr(I2C3),6);
 
 //----------------------------------------------------------------------------------- GPS
   init_GPS(&gps_raw_message,USART2,DMA1,LL_DMA_STREAM_5);
 
 //----------------------------------------------------------------------------------- mpu6050 I2C
-  I2C_Receive_DMA_init(&(mpu6050.I2C),&DMA,I2C2,DMA1,LL_DMA_STREAM_3,(uint32_t)i2c_dma_buf,LL_I2C_DMA_GetRegAddr(I2C2),14);
+  I2C_Receive_Circular_DMA_init(&(mpu6050.I2C),&mpu6050_DMA,I2C2,DMA1,LL_DMA_STREAM_3,(uint32_t)mpu6050_dma_buf,LL_I2C_DMA_GetRegAddr(I2C2),14);
   init_MPU6050(&mpu6050,I2C2);
   MPU_Gyrocali(&mpu6050,&angle);
   MPU_Angcali(&mpu6050,&angle);
 
   mpu_reg_address=MPU6050_RA_ACCEL_XOUT_H;
   I2C_Transmit(&(mpu6050.I2C),mpu6050.gyro_address,&mpu_reg_address,1);
-  I2C_Receive_DMA(&(mpu6050.I2C),&DMA, mpu6050.gyro_address);
+  I2C_Receive_Circular_DMA(&(mpu6050.I2C),&mpu6050_DMA, mpu6050.gyro_address);
 
 //----------------------------------------------------------------------------------- load para
   load_pid_para();
@@ -283,6 +295,7 @@ int main(void)
   LL_GPIO_ResetOutputPin(GPIOE,LL_GPIO_PIN_7);
   LL_GPIO_ResetOutputPin(GPIOE,LL_GPIO_PIN_8);
   LL_GPIO_ResetOutputPin(GPIOE,LL_GPIO_PIN_9);
+
 
   /* USER CODE END 2 */
 
@@ -457,10 +470,10 @@ int main(void)
 	  }
 
 //=========================================================================================================================================================== ANGLE
-	  else if(condition_angle && DMA.i2c_receive_dma){
+	  else if(condition_angle && mpu6050_DMA.i2c_receive_dma){
 		  //LL_GPIO_TogglePin(GPIOE,LL_GPIO_PIN_2);
 		  //LL_GPIO_SetOutputPin(GPIOE,LL_GPIO_PIN_2);
-		  MPU_Complementary_Filter(&angle,i2c_dma_buf);
+		  MPU_Complementary_Filter(&angle,mpu6050_dma_buf);
 
 		  status_data.pitch=angle.pitch-angle.pitch_offset;
 		  status_data.roll=angle.roll-angle.roll_offset;
@@ -474,13 +487,15 @@ int main(void)
 		  if(counter>200){
 			  /*printf("%d\t%d\t%d\r\n",angle.getmpuaccx,angle.getmpuaccy,angle.getmpuaccz);
 			  printf("%.2f\t%.2f\t%.2f\n\n\r",angle.f_gyx,angle.f_gyy,angle.f_gyz);*/
-			  printf("yaw:%.2f\r\n",status_data.set_yaw);
+			  printf("yaw:%.2f\r\n",status_data.yaw);
+			  //printf("%d\r\n",DMA1_Stream2->NDTR);
+			  //printf("setyaw:%.2f\r\n",status_data.set_yaw);
 			  printf("pitch:%.2f\r\nroll:%.2f\n\n\r",status_data.pitch,status_data.roll);
 			  counter=0;
 		  }
 		  mpu_reg_address=MPU6050_RA_ACCEL_XOUT_H;
 		  I2C_Transmit(&mpu6050.I2C,mpu6050.gyro_address,&mpu_reg_address,1);
-		  I2C_Receive_DMA(&mpu6050.I2C,&DMA,mpu6050.gyro_address);
+		  I2C_Receive_Circular_DMA(&mpu6050.I2C,&mpu6050_DMA,mpu6050.gyro_address);
 		  condition_angle=0;
 		  //LL_GPIO_ResetOutputPin(GPIOE,LL_GPIO_PIN_2);
 	  }
@@ -569,69 +584,82 @@ int main(void)
 			  float radpitch, radroll;
 			  float xh,yh;
 			  float dif_yaw;
+			  if(i2c3_DMA.i2c_receive_dma){
+				  //HMC_Mag_Read(&hmc5883);
+				  int16_t output[3];
+				  output[0]=(int16_t)((mag_dma_buf[0]<<8) | mag_dma_buf[1]);
+				  output[1]=(int16_t)((mag_dma_buf[2]<<8) | mag_dma_buf[3]);
+				  output[2]=(int16_t)((mag_dma_buf[4]<<8) | mag_dma_buf[5]);
+				  hmc5883.mx=(float)output[0];
+				  hmc5883.my=(float)output[2];
+				  hmc5883.mz=(float)output[1];
 
-			  HMC_Mag_Read(&hmc5883);
-			  hmc5883.mx=(hmc5883.mx-hmc5883.offset_x)*hmc5883.scale_x;
-			  hmc5883.my=(hmc5883.my-hmc5883.offset_y)*hmc5883.scale_y;
-			  hmc5883.mz=(hmc5883.mz-hmc5883.offset_z)*hmc5883.scale_z;
+				  hmc5883.mx=(hmc5883.mx-hmc5883.offset_x)*hmc5883.scale_x;
+				  hmc5883.my=(hmc5883.my-hmc5883.offset_y)*hmc5883.scale_y;
+				  hmc5883.mz=(hmc5883.mz-hmc5883.offset_z)*hmc5883.scale_z;
 
-			  radroll=-status_data.pitch*0.01745329252;
-			  radpitch=-status_data.roll*0.01745329252;
+				  radroll=-status_data.pitch*0.01745329252;
+				  radpitch=-status_data.roll*0.01745329252;
 
-			  xh=hmc5883.mx*cosf(radpitch) + hmc5883.my*sinf(radroll)*sinf(radpitch) + hmc5883.mz*sinf(radpitch)*cosf(radroll);
-			  yh=hmc5883.my*cosf(radroll) + hmc5883.mz*sinf(radroll);
-			  status_data.yaw=atan2f(-yh,-xh)*(57.29577951);
+				  xh=hmc5883.mx*cosf(radpitch) + hmc5883.my*sinf(radroll)*sinf(radpitch) + hmc5883.mz*sinf(radpitch)*cosf(radroll);
+				  yh=hmc5883.my*cosf(radroll) + hmc5883.mz*sinf(radroll);
+				  status_data.yaw=atan2f(-yh,-xh)*(57.29577951);
 
-			  status_data.pre_dif_yaw=status_data.dif_yaw;
+				  status_data.pre_dif_yaw=status_data.dif_yaw;
 
-			  if(status_data.set_yaw>0){
-				  if(status_data.yaw>status_data.set_yaw || (status_data.set_yaw-180)>status_data.yaw){		//yaw_angle ccw(positive value)
-					  if(status_data.yaw>0){
+				  if(status_data.set_yaw>0){
+					  if(status_data.yaw>status_data.set_yaw || (status_data.set_yaw-180)>status_data.yaw){		//yaw_angle ccw(positive value)
+						  if(status_data.yaw>0){
+							  dif_yaw=status_data.yaw-status_data.set_yaw;
+						  }
+						  else{
+							  dif_yaw=360-status_data.set_yaw+status_data.yaw;
+						  }
+					  }
+					  else{		//yaw_angle cw(negative value)
 						  dif_yaw=status_data.yaw-status_data.set_yaw;
 					  }
-					  else{
-						  dif_yaw=360-status_data.set_yaw+status_data.yaw;
-					  }
 				  }
-				  else{		//yaw_angle cw(negative value)
-					  dif_yaw=status_data.yaw-status_data.set_yaw;
-				  }
-			  }
-			  else{
-				  if(status_data.set_yaw>status_data.yaw || status_data.yaw>(status_data.set_yaw+180)){		//yaw_angle cw(negative value)
-					  if(status_data.yaw>0){
-						  dif_yaw=(status_data.yaw-status_data.set_yaw)-360;
+				  else{
+					  if(status_data.set_yaw>status_data.yaw || status_data.yaw>(status_data.set_yaw+180)){		//yaw_angle cw(negative value)
+						  if(status_data.yaw>0){
+							  dif_yaw=(status_data.yaw-status_data.set_yaw)-360;
+						  }
+						  else{
+							  dif_yaw=status_data.yaw-status_data.set_yaw;
+						  }
 					  }
-					  else{
+					  else{		//yaw_angle ccw(positive value)
 						  dif_yaw=status_data.yaw-status_data.set_yaw;
 					  }
 				  }
-				  else{		//yaw_angle ccw(positive value)
-					  dif_yaw=status_data.yaw-status_data.set_yaw;
+
+				  yaw_mean+=dif_yaw;
+				  yaw_mean-=yaw_mean_arr[yaw_mean_count];
+				  yaw_mean_arr[yaw_mean_count]=dif_yaw;
+				  yaw_mean_count++;
+				  if(yaw_mean_count==YAW_MEAN_ARR_NUM)
+					  yaw_mean_count=0;
+
+				  status_data.dif_yaw=yaw_mean/YAW_MEAN_ARR_NUM;
+
+
+				  //mag_counter++;
+				  if(mag_counter>250){
+					  printf("%.2f %.2f\r\n",status_data.dif_yaw,dif_yaw);
+					  printf("%.2f\n\n\r",status_data.yaw);
+					  //HMC_Default_Reg(&hmc5883);
+					  //printf("%.2f\t%.2f\t%.2f\r\n",hmc5883.mx,hmc5883.my,hmc5883.mz);
+					  //printf("%.2f\t%.2f\t%.2f\r\n",hmc5883.offset_x,hmc5883.offset_y,hmc5883.offset_z);
+					  //printf("%.2f\t%.2f\t%.2f\n\n\r",hmc5883.scale_x,hmc5883.scale_y,hmc5883.scale_z);
+					  mag_counter=0;
 				  }
+
+				  mag_baro=1;
+				  mag_reg_address=0x03;
+				  I2C_Transmit(&hmc5883.i2c,hmc5883.magneto_address,&mag_reg_address,1);
+				  I2C_Receive_DMA(&hmc5883.i2c,&i2c3_DMA,hmc5883.magneto_address,(uint32_t)mag_dma_buf,LL_I2C_DMA_GetRegAddr(I2C3),6);
 			  }
-
-			  yaw_mean+=dif_yaw;
-			  yaw_mean-=yaw_mean_arr[yaw_mean_count];
-			  yaw_mean_arr[yaw_mean_count]=dif_yaw;
-			  yaw_mean_count++;
-			  if(yaw_mean_count==YAW_MEAN_ARR_NUM)
-				  yaw_mean_count=0;
-
-			  status_data.dif_yaw=yaw_mean/YAW_MEAN_ARR_NUM;
-
-
-			  //mag_counter++;
-			  if(mag_counter>50){
-				  printf("%.2f %.2f\r\n",status_data.dif_yaw,dif_yaw);
-				  printf("%.2f\n\n\r",status_data.yaw);
-				  //printf("%.2f\t%.2f\t%.2f\r\n",hmc5883.mx,hmc5883.my,hmc5883.mz);
-				  //printf("%.2f\t%.2f\t%.2f\r\n",hmc5883.offset_x,hmc5883.offset_y,hmc5883.offset_z);
-				  //printf("%.2f\t%.2f\t%.2f\n\n\r",hmc5883.scale_x,hmc5883.scale_y,hmc5883.scale_z);
-				  mag_counter=0;
-			  }
-
-			  mag_baro=1;
 		  }
 		  else{
 
@@ -812,23 +840,19 @@ int main(void)
 
 
 //=========================================================================================================================================================== ibus receiver
-	  if(condition_uart4){
-		  LL_DMA_DisableStream(DMA1,LL_DMA_STREAM_2);
-		  DMA1->LIFCR=0x003D0000;	//DMA1 STREAM2 CLEAR ALL FLAG
-		  /*LL_DMA_ClearFlag_TE2(DMA1);
-		  LL_DMA_ClearFlag_HT2(DMA1);
-		  LL_DMA_ClearFlag_TC2(DMA1);
-		  LL_DMA_ClearFlag_DME2(DMA1);
-		  LL_DMA_ClearFlag_FE2(DMA1);*/
-		  LL_DMA_EnableStream(DMA1,LL_DMA_STREAM_2);
+	  if(condition_receiver){
+		  LL_DMA_DisableStream(DMA1,LL_DMA_STREAM_1);
+		  //DMA1->LIFCR=0x003D0000;	//DMA1 STREAM2 CLEAR ALL FLAG
+		  DMA1->LIFCR=0x00000F40;	//DMA1 STREAM1 CLEAR ALL FLAG
+		  LL_DMA_EnableStream(DMA1,LL_DMA_STREAM_1);
 
-		  if(uart4_dma_buf[0]==0x20 && uart4_dma_buf[1]==0x40){
-			  timer[0]=(uint32_t)(uart4_dma_buf[7]<<8) + uart4_dma_buf[6];
-			  timer[1]=(uint32_t)(uart4_dma_buf[5]<<8) + uart4_dma_buf[4];
-			  timer[2]=(uint32_t)(uart4_dma_buf[9]<<8) + uart4_dma_buf[8];
-			  timer[3]=(uint32_t)(uart4_dma_buf[3]<<8) + uart4_dma_buf[2];
-			  timer[4]=(uint32_t)(uart4_dma_buf[11]<<8) + uart4_dma_buf[10];
-			  timer[5]=(uint32_t)(uart4_dma_buf[13]<<8) + uart4_dma_buf[12];
+		  if(receiver_dma_buf[0]==0x20 && receiver_dma_buf[1]==0x40){
+			  timer[0]=(uint32_t)(receiver_dma_buf[7]<<8) + receiver_dma_buf[6];
+			  timer[1]=(uint32_t)(receiver_dma_buf[5]<<8) + receiver_dma_buf[4];
+			  timer[2]=(uint32_t)(receiver_dma_buf[9]<<8) + receiver_dma_buf[8];
+			  timer[3]=(uint32_t)(receiver_dma_buf[3]<<8) + receiver_dma_buf[2];
+			  timer[4]=(uint32_t)(receiver_dma_buf[11]<<8) + receiver_dma_buf[10];
+			  timer[5]=(uint32_t)(receiver_dma_buf[13]<<8) + receiver_dma_buf[12];
 		  }
 		  //---------------------------------------------------------------------- throttle
 		  if(timer[0]<1015)
@@ -889,7 +913,7 @@ int main(void)
 			  printf("%d\t%d\t%d\r\n%d\t%d\t%d\n\n\r",timer[0],timer[1],timer[2],timer[3],timer[4],timer[5]);
 			  uart_counter=0;
 		  }
-		  condition_uart4=0;
+		  condition_receiver=0;
 	  }
 
 //===========================================================================================================================================================
@@ -1123,6 +1147,31 @@ static void MX_I2C3_Init(void)
 
   /* Peripheral clock enable */
   LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_I2C3);
+
+  /* I2C3 DMA Init */
+  
+  /* I2C3_RX Init */
+  LL_DMA_SetChannelSelection(DMA1, LL_DMA_STREAM_2, LL_DMA_CHANNEL_3);
+
+  LL_DMA_SetDataTransferDirection(DMA1, LL_DMA_STREAM_2, LL_DMA_DIRECTION_PERIPH_TO_MEMORY);
+
+  LL_DMA_SetStreamPriorityLevel(DMA1, LL_DMA_STREAM_2, LL_DMA_PRIORITY_LOW);
+
+  LL_DMA_SetMode(DMA1, LL_DMA_STREAM_2, LL_DMA_MODE_NORMAL);
+
+  LL_DMA_SetPeriphIncMode(DMA1, LL_DMA_STREAM_2, LL_DMA_PERIPH_NOINCREMENT);
+
+  LL_DMA_SetMemoryIncMode(DMA1, LL_DMA_STREAM_2, LL_DMA_MEMORY_INCREMENT);
+
+  LL_DMA_SetPeriphSize(DMA1, LL_DMA_STREAM_2, LL_DMA_PDATAALIGN_BYTE);
+
+  LL_DMA_SetMemorySize(DMA1, LL_DMA_STREAM_2, LL_DMA_MDATAALIGN_BYTE);
+
+  LL_DMA_DisableFifoMode(DMA1, LL_DMA_STREAM_2);
+
+  /* I2C3 interrupt Init */
+  NVIC_SetPriority(I2C3_EV_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(I2C3_EV_IRQn);
 
   /* USER CODE BEGIN I2C3_Init 1 */
 
@@ -1380,82 +1429,6 @@ static void MX_TIM11_Init(void)
 }
 
 /**
-  * @brief UART4 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_UART4_Init(void)
-{
-
-  /* USER CODE BEGIN UART4_Init 0 */
-
-  /* USER CODE END UART4_Init 0 */
-
-  LL_USART_InitTypeDef USART_InitStruct = {0};
-
-  LL_GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-  /* Peripheral clock enable */
-  LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_UART4);
-  
-  LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_GPIOC);
-  /**UART4 GPIO Configuration  
-  PC10   ------> UART4_TX
-  PC11   ------> UART4_RX 
-  */
-  GPIO_InitStruct.Pin = RECEIVER_TX_Pin|RECEIVER_RX_Pin;
-  GPIO_InitStruct.Mode = LL_GPIO_MODE_ALTERNATE;
-  GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
-  GPIO_InitStruct.Pull = LL_GPIO_PULL_UP;
-  GPIO_InitStruct.Alternate = LL_GPIO_AF_8;
-  LL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /* UART4 DMA Init */
-  
-  /* UART4_RX Init */
-  LL_DMA_SetChannelSelection(DMA1, LL_DMA_STREAM_2, LL_DMA_CHANNEL_4);
-
-  LL_DMA_SetDataTransferDirection(DMA1, LL_DMA_STREAM_2, LL_DMA_DIRECTION_PERIPH_TO_MEMORY);
-
-  LL_DMA_SetStreamPriorityLevel(DMA1, LL_DMA_STREAM_2, LL_DMA_PRIORITY_LOW);
-
-  LL_DMA_SetMode(DMA1, LL_DMA_STREAM_2, LL_DMA_MODE_NORMAL);
-
-  LL_DMA_SetPeriphIncMode(DMA1, LL_DMA_STREAM_2, LL_DMA_PERIPH_NOINCREMENT);
-
-  LL_DMA_SetMemoryIncMode(DMA1, LL_DMA_STREAM_2, LL_DMA_MEMORY_INCREMENT);
-
-  LL_DMA_SetPeriphSize(DMA1, LL_DMA_STREAM_2, LL_DMA_PDATAALIGN_BYTE);
-
-  LL_DMA_SetMemorySize(DMA1, LL_DMA_STREAM_2, LL_DMA_MDATAALIGN_BYTE);
-
-  LL_DMA_DisableFifoMode(DMA1, LL_DMA_STREAM_2);
-
-  /* UART4 interrupt Init */
-  NVIC_SetPriority(UART4_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
-  NVIC_EnableIRQ(UART4_IRQn);
-
-  /* USER CODE BEGIN UART4_Init 1 */
-
-  /* USER CODE END UART4_Init 1 */
-  USART_InitStruct.BaudRate = 115200;
-  USART_InitStruct.DataWidth = LL_USART_DATAWIDTH_8B;
-  USART_InitStruct.StopBits = LL_USART_STOPBITS_1;
-  USART_InitStruct.Parity = LL_USART_PARITY_NONE;
-  USART_InitStruct.TransferDirection = LL_USART_DIRECTION_TX_RX;
-  USART_InitStruct.HardwareFlowControl = LL_USART_HWCONTROL_NONE;
-  USART_InitStruct.OverSampling = LL_USART_OVERSAMPLING_16;
-  LL_USART_Init(UART4, &USART_InitStruct);
-  LL_USART_ConfigAsyncMode(UART4);
-  LL_USART_Enable(UART4);
-  /* USER CODE BEGIN UART4_Init 2 */
-
-  /* USER CODE END UART4_Init 2 */
-
-}
-
-/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -1586,6 +1559,82 @@ static void MX_USART2_UART_Init(void)
 
 }
 
+/**
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART3_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  LL_USART_InitTypeDef USART_InitStruct = {0};
+
+  LL_GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* Peripheral clock enable */
+  LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_USART3);
+  
+  LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_GPIOC);
+  /**USART3 GPIO Configuration  
+  PC10   ------> USART3_TX
+  PC11   ------> USART3_RX 
+  */
+  GPIO_InitStruct.Pin = RECEIVER_TX_Pin|RECEIVER_RX_Pin;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_ALTERNATE;
+  GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+  GPIO_InitStruct.Pull = LL_GPIO_PULL_NO;
+  GPIO_InitStruct.Alternate = LL_GPIO_AF_7;
+  LL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /* USART3 DMA Init */
+  
+  /* USART3_RX Init */
+  LL_DMA_SetChannelSelection(DMA1, LL_DMA_STREAM_1, LL_DMA_CHANNEL_4);
+
+  LL_DMA_SetDataTransferDirection(DMA1, LL_DMA_STREAM_1, LL_DMA_DIRECTION_PERIPH_TO_MEMORY);
+
+  LL_DMA_SetStreamPriorityLevel(DMA1, LL_DMA_STREAM_1, LL_DMA_PRIORITY_LOW);
+
+  LL_DMA_SetMode(DMA1, LL_DMA_STREAM_1, LL_DMA_MODE_NORMAL);
+
+  LL_DMA_SetPeriphIncMode(DMA1, LL_DMA_STREAM_1, LL_DMA_PERIPH_NOINCREMENT);
+
+  LL_DMA_SetMemoryIncMode(DMA1, LL_DMA_STREAM_1, LL_DMA_MEMORY_INCREMENT);
+
+  LL_DMA_SetPeriphSize(DMA1, LL_DMA_STREAM_1, LL_DMA_PDATAALIGN_BYTE);
+
+  LL_DMA_SetMemorySize(DMA1, LL_DMA_STREAM_1, LL_DMA_MDATAALIGN_BYTE);
+
+  LL_DMA_DisableFifoMode(DMA1, LL_DMA_STREAM_1);
+
+  /* USART3 interrupt Init */
+  NVIC_SetPriority(USART3_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(USART3_IRQn);
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  USART_InitStruct.BaudRate = 115200;
+  USART_InitStruct.DataWidth = LL_USART_DATAWIDTH_8B;
+  USART_InitStruct.StopBits = LL_USART_STOPBITS_1;
+  USART_InitStruct.Parity = LL_USART_PARITY_NONE;
+  USART_InitStruct.TransferDirection = LL_USART_DIRECTION_TX_RX;
+  USART_InitStruct.HardwareFlowControl = LL_USART_HWCONTROL_NONE;
+  USART_InitStruct.OverSampling = LL_USART_OVERSAMPLING_16;
+  LL_USART_Init(USART3, &USART_InitStruct);
+  LL_USART_ConfigAsyncMode(USART3);
+  LL_USART_Enable(USART3);
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
+}
+
 /** 
   * Enable DMA controller clock
   */
@@ -1597,6 +1646,9 @@ static void MX_DMA_Init(void)
   LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_DMA1);
 
   /* DMA interrupt init */
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream1_IRQn);
   /* DMA1_Stream2_IRQn interrupt configuration */
   NVIC_SetPriority(DMA1_Stream2_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
   NVIC_EnableIRQ(DMA1_Stream2_IRQn);
