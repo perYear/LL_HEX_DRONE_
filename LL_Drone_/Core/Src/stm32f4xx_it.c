@@ -214,17 +214,17 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles DMA1 stream1 global interrupt.
+  * @brief This function handles DMA1 stream0 global interrupt.
   */
-void DMA1_Stream1_IRQHandler(void)
+void DMA1_Stream0_IRQHandler(void)
 {
-  /* USER CODE BEGIN DMA1_Stream1_IRQn 0 */
+  /* USER CODE BEGIN DMA1_Stream0_IRQn 0 */
 
-  /* USER CODE END DMA1_Stream1_IRQn 0 */
+  /* USER CODE END DMA1_Stream0_IRQn 0 */
   
-  /* USER CODE BEGIN DMA1_Stream1_IRQn 1 */
+  /* USER CODE BEGIN DMA1_Stream0_IRQn 1 */
 
-  /* USER CODE END DMA1_Stream1_IRQn 1 */
+  /* USER CODE END DMA1_Stream0_IRQn 1 */
 }
 
 /**
@@ -370,19 +370,47 @@ void USART2_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles USART3 global interrupt.
+  * @brief This function handles DMA1 stream7 global interrupt.
   */
-void USART3_IRQHandler(void)
+void DMA1_Stream7_IRQHandler(void)
 {
-  /* USER CODE BEGIN USART3_IRQn 0 */
-	if(LL_USART_IsActiveFlag_IDLE(USART3)){
-		LL_USART_ClearFlag_IDLE(USART3);
+  /* USER CODE BEGIN DMA1_Stream7_IRQn 0 */
+
+  /* USER CODE END DMA1_Stream7_IRQn 0 */
+  
+  /* USER CODE BEGIN DMA1_Stream7_IRQn 1 */
+
+  /* USER CODE END DMA1_Stream7_IRQn 1 */
+}
+
+/**
+  * @brief This function handles DMA2 stream1 global interrupt.
+  */
+void DMA2_Stream1_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA2_Stream1_IRQn 0 */
+
+  /* USER CODE END DMA2_Stream1_IRQn 0 */
+  
+  /* USER CODE BEGIN DMA2_Stream1_IRQn 1 */
+
+  /* USER CODE END DMA2_Stream1_IRQn 1 */
+}
+
+/**
+  * @brief This function handles USART6 global interrupt.
+  */
+void USART6_IRQHandler(void)
+{
+  /* USER CODE BEGIN USART6_IRQn 0 */
+	if(LL_USART_IsActiveFlag_IDLE(USART6)){
+		LL_USART_ClearFlag_IDLE(USART6);
 		condition_receiver=1;
 	}
-  /* USER CODE END USART3_IRQn 0 */
-  /* USER CODE BEGIN USART3_IRQn 1 */
+  /* USER CODE END USART6_IRQn 0 */
+  /* USER CODE BEGIN USART6_IRQn 1 */
 
-  /* USER CODE END USART3_IRQn 1 */
+  /* USER CODE END USART6_IRQn 1 */
 }
 
 /**

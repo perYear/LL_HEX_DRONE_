@@ -196,7 +196,6 @@ void I2C_Receive_Circular_DMA_init(I2C_struct * I2C,
 
 	//I2C
 	I2C_init(I2C,I2C_type);
-	//LL_I2C_EnableDMAReq_RX(I2C_type);
 
 	//DMA
 	DMA->DMA=DMA_type;

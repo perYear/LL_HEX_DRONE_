@@ -63,7 +63,8 @@ static void MX_I2C2_Init(void);
 static void MX_I2C3_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
-static void MX_USART3_UART_Init(void);
+static void MX_SPI3_Init(void);
+static void MX_USART6_UART_Init(void);
 /* USER CODE BEGIN PFP */
 #define SBI(address, ab) ( address |= (0x01<<ab) )
 #define CBI(address, ab) ( address &= ~(0x01<<ab) )
@@ -147,7 +148,8 @@ int main(void)
   MX_I2C3_Init();
   MX_USART2_UART_Init();
   MX_ADC1_Init();
-  MX_USART3_UART_Init();
+  MX_SPI3_Init();
+  MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
 
   //----------------------------- test counter
@@ -236,14 +238,15 @@ int main(void)
   LL_ADC_REG_StartConversionSWStart(ADC1);
 
 //----------------------------------------------------------------------------------- ibus receiver
-  LL_DMA_SetMemoryAddress(DMA1,LL_DMA_STREAM_1,(uint32_t)receiver_dma_buf);
-  LL_DMA_SetPeriphAddress(DMA1,LL_DMA_STREAM_1,(uint32_t)(&USART3->DR));
-  LL_DMA_SetDataLength(DMA1,LL_DMA_STREAM_1,33);
+  LL_DMA_SetMemoryAddress(DMA2,LL_DMA_STREAM_1,(uint32_t)receiver_dma_buf);
+  LL_DMA_SetPeriphAddress(DMA2,LL_DMA_STREAM_1,(uint32_t)(&USART6->DR));
+  LL_DMA_SetDataLength(DMA2,LL_DMA_STREAM_1,33);
   //DMA1->LIFCR=0x003D0000;	//DMA1 STREAM2 CLEAR ALL FLAG
-  DMA1->LIFCR=0x00000F40;	//DMA1 STREAM1 CLEAR ALL FLAG
-  LL_DMA_EnableStream(DMA1,LL_DMA_STREAM_1);
-  LL_USART_EnableDMAReq_RX(USART3);
-  LL_USART_EnableIT_IDLE(USART3);
+  //DMA1->LIFCR=0x00000F40;	//DMA1 STREAM1 CLEAR ALL FLAG
+  DMA2->LIFCR=0x00000F40;	//DMA1 STREAM1 CLEAR ALL FLAG
+  LL_DMA_EnableStream(DMA2,LL_DMA_STREAM_1);
+  LL_USART_EnableDMAReq_RX(USART6);
+  LL_USART_EnableIT_IDLE(USART6);
 
 //----------------------------------------------------------------------------------- HMC5883
   init_HMC(&hmc5883,I2C3);
@@ -344,12 +347,12 @@ int main(void)
 			  cali_condition=1;
 			  battery_adc_led_off=1;
 			  LL_mDelay(500);
-			  if(LL_GPIO_IsInputPinSet(SWITCH_2_GPIO_Port,SWITCH_2_Pin)){
+			  if(LL_GPIO_IsInputPinSet(SWITCH_1_GPIO_Port,SWITCH_1_Pin) && LL_GPIO_IsInputPinSet(SWITCH_2_GPIO_Port,SWITCH_2_Pin)){
 				  LL_GPIO_SetOutputPin(GPIOE,LL_GPIO_PIN_7);
 				  LL_GPIO_SetOutputPin(GPIOE,LL_GPIO_PIN_8);
 				  is_mag_cali=1;
 			  }
-			  else{
+			  else if(LL_GPIO_IsInputPinSet(SWITCH_1_GPIO_Port,SWITCH_1_Pin)){
 				  LL_GPIO_SetOutputPin(GPIOE,LL_GPIO_PIN_9);
 				  MPU_Gyrocali(&mpu6050,&angle);
 				  MPU_Angcali(&mpu6050,&angle);
@@ -358,7 +361,6 @@ int main(void)
 			  }
 		  }
 		  else if(LL_GPIO_IsInputPinSet(SWITCH_1_GPIO_Port,SWITCH_1_Pin)==0 && LL_GPIO_IsInputPinSet(SWITCH_2_GPIO_Port,SWITCH_2_Pin)==0 && cali_condition==1){
-			  //printf("bb\r\n");
 			  if(first_data==0){	//mag save
 				  LL_mDelay(500);
 				  save_mag_para();
@@ -372,7 +374,6 @@ int main(void)
 		  }
 
 		  if(is_mag_cali){
-			  //printf("cc\r\n");
 
 			  float avg_delta[4]={0,};
 
@@ -502,7 +503,6 @@ int main(void)
 
 //=========================================================================================================================================================== PID
 	  else if(condition_pid){
-		  float input_yaw;
 		  float yaw_limit;
 		  //LL_GPIO_TogglePin(GPIOE,LL_GPIO_PIN_10);
 
@@ -716,6 +716,7 @@ int main(void)
 						  gps_pitch_pass_point=0;
 						  temp_pitch_speed=pitch_p_speed;
 					  }
+
 					  pre_pitch_p=pitch_p;
 					  if(pitch_p>gps_pitch_p_bound){
 						  pitch_p=gps_pitch_p_bound;
@@ -841,10 +842,11 @@ int main(void)
 
 //=========================================================================================================================================================== ibus receiver
 	  if(condition_receiver){
-		  LL_DMA_DisableStream(DMA1,LL_DMA_STREAM_1);
+		  LL_DMA_DisableStream(DMA2,LL_DMA_STREAM_1);
 		  //DMA1->LIFCR=0x003D0000;	//DMA1 STREAM2 CLEAR ALL FLAG
-		  DMA1->LIFCR=0x00000F40;	//DMA1 STREAM1 CLEAR ALL FLAG
-		  LL_DMA_EnableStream(DMA1,LL_DMA_STREAM_1);
+		  //DMA1->LIFCR=0x00000F40;	//DMA1 STREAM1 CLEAR ALL FLAG
+		  DMA2->LIFCR=0x00000F40;	//DMA2 STREAM1 CLEAR ALL FLAG
+		  LL_DMA_EnableStream(DMA2,LL_DMA_STREAM_1);
 
 		  if(receiver_dma_buf[0]==0x20 && receiver_dma_buf[1]==0x40){
 			  timer[0]=(uint32_t)(receiver_dma_buf[7]<<8) + receiver_dma_buf[6];
@@ -1251,6 +1253,101 @@ static void MX_SPI1_Init(void)
 }
 
 /**
+  * @brief SPI3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI3_Init(void)
+{
+
+  /* USER CODE BEGIN SPI3_Init 0 */
+
+  /* USER CODE END SPI3_Init 0 */
+
+  LL_SPI_InitTypeDef SPI_InitStruct = {0};
+
+  LL_GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* Peripheral clock enable */
+  LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_SPI3);
+  
+  LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_GPIOC);
+  /**SPI3 GPIO Configuration  
+  PC10   ------> SPI3_SCK
+  PC11   ------> SPI3_MISO
+  PC12   ------> SPI3_MOSI 
+  */
+  GPIO_InitStruct.Pin = LL_GPIO_PIN_10|LL_GPIO_PIN_11|LL_GPIO_PIN_12;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_ALTERNATE;
+  GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+  GPIO_InitStruct.Pull = LL_GPIO_PULL_NO;
+  GPIO_InitStruct.Alternate = LL_GPIO_AF_6;
+  LL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /* SPI3 DMA Init */
+  
+  /* SPI3_RX Init */
+  LL_DMA_SetChannelSelection(DMA1, LL_DMA_STREAM_0, LL_DMA_CHANNEL_0);
+
+  LL_DMA_SetDataTransferDirection(DMA1, LL_DMA_STREAM_0, LL_DMA_DIRECTION_PERIPH_TO_MEMORY);
+
+  LL_DMA_SetStreamPriorityLevel(DMA1, LL_DMA_STREAM_0, LL_DMA_PRIORITY_LOW);
+
+  LL_DMA_SetMode(DMA1, LL_DMA_STREAM_0, LL_DMA_MODE_NORMAL);
+
+  LL_DMA_SetPeriphIncMode(DMA1, LL_DMA_STREAM_0, LL_DMA_PERIPH_NOINCREMENT);
+
+  LL_DMA_SetMemoryIncMode(DMA1, LL_DMA_STREAM_0, LL_DMA_MEMORY_INCREMENT);
+
+  LL_DMA_SetPeriphSize(DMA1, LL_DMA_STREAM_0, LL_DMA_PDATAALIGN_BYTE);
+
+  LL_DMA_SetMemorySize(DMA1, LL_DMA_STREAM_0, LL_DMA_MDATAALIGN_BYTE);
+
+  LL_DMA_DisableFifoMode(DMA1, LL_DMA_STREAM_0);
+
+  /* SPI3_TX Init */
+  LL_DMA_SetChannelSelection(DMA1, LL_DMA_STREAM_7, LL_DMA_CHANNEL_0);
+
+  LL_DMA_SetDataTransferDirection(DMA1, LL_DMA_STREAM_7, LL_DMA_DIRECTION_MEMORY_TO_PERIPH);
+
+  LL_DMA_SetStreamPriorityLevel(DMA1, LL_DMA_STREAM_7, LL_DMA_PRIORITY_LOW);
+
+  LL_DMA_SetMode(DMA1, LL_DMA_STREAM_7, LL_DMA_MODE_NORMAL);
+
+  LL_DMA_SetPeriphIncMode(DMA1, LL_DMA_STREAM_7, LL_DMA_PERIPH_NOINCREMENT);
+
+  LL_DMA_SetMemoryIncMode(DMA1, LL_DMA_STREAM_7, LL_DMA_MEMORY_INCREMENT);
+
+  LL_DMA_SetPeriphSize(DMA1, LL_DMA_STREAM_7, LL_DMA_PDATAALIGN_BYTE);
+
+  LL_DMA_SetMemorySize(DMA1, LL_DMA_STREAM_7, LL_DMA_MDATAALIGN_BYTE);
+
+  LL_DMA_DisableFifoMode(DMA1, LL_DMA_STREAM_7);
+
+  /* USER CODE BEGIN SPI3_Init 1 */
+
+  /* USER CODE END SPI3_Init 1 */
+  /* SPI3 parameter configuration*/
+  SPI_InitStruct.TransferDirection = LL_SPI_FULL_DUPLEX;
+  SPI_InitStruct.Mode = LL_SPI_MODE_MASTER;
+  SPI_InitStruct.DataWidth = LL_SPI_DATAWIDTH_8BIT;
+  SPI_InitStruct.ClockPolarity = LL_SPI_POLARITY_LOW;
+  SPI_InitStruct.ClockPhase = LL_SPI_PHASE_1EDGE;
+  SPI_InitStruct.NSS = LL_SPI_NSS_SOFT;
+  SPI_InitStruct.BaudRate = LL_SPI_BAUDRATEPRESCALER_DIV2;
+  SPI_InitStruct.BitOrder = LL_SPI_MSB_FIRST;
+  SPI_InitStruct.CRCCalculation = LL_SPI_CRCCALCULATION_DISABLE;
+  SPI_InitStruct.CRCPoly = 10;
+  LL_SPI_Init(SPI3, &SPI_InitStruct);
+  LL_SPI_SetStandard(SPI3, LL_SPI_PROTOCOL_MOTOROLA);
+  /* USER CODE BEGIN SPI3_Init 2 */
+
+  /* USER CODE END SPI3_Init 2 */
+
+}
+
+/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -1560,65 +1657,65 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
-  * @brief USART3 Initialization Function
+  * @brief USART6 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_USART3_UART_Init(void)
+static void MX_USART6_UART_Init(void)
 {
 
-  /* USER CODE BEGIN USART3_Init 0 */
+  /* USER CODE BEGIN USART6_Init 0 */
 
-  /* USER CODE END USART3_Init 0 */
+  /* USER CODE END USART6_Init 0 */
 
   LL_USART_InitTypeDef USART_InitStruct = {0};
 
   LL_GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* Peripheral clock enable */
-  LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_USART3);
+  LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_USART6);
   
   LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_GPIOC);
-  /**USART3 GPIO Configuration  
-  PC10   ------> USART3_TX
-  PC11   ------> USART3_RX 
+  /**USART6 GPIO Configuration  
+  PC6   ------> USART6_TX
+  PC7   ------> USART6_RX 
   */
   GPIO_InitStruct.Pin = RECEIVER_TX_Pin|RECEIVER_RX_Pin;
   GPIO_InitStruct.Mode = LL_GPIO_MODE_ALTERNATE;
   GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_VERY_HIGH;
   GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
   GPIO_InitStruct.Pull = LL_GPIO_PULL_NO;
-  GPIO_InitStruct.Alternate = LL_GPIO_AF_7;
+  GPIO_InitStruct.Alternate = LL_GPIO_AF_8;
   LL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /* USART3 DMA Init */
+  /* USART6 DMA Init */
   
-  /* USART3_RX Init */
-  LL_DMA_SetChannelSelection(DMA1, LL_DMA_STREAM_1, LL_DMA_CHANNEL_4);
+  /* USART6_RX Init */
+  LL_DMA_SetChannelSelection(DMA2, LL_DMA_STREAM_1, LL_DMA_CHANNEL_5);
 
-  LL_DMA_SetDataTransferDirection(DMA1, LL_DMA_STREAM_1, LL_DMA_DIRECTION_PERIPH_TO_MEMORY);
+  LL_DMA_SetDataTransferDirection(DMA2, LL_DMA_STREAM_1, LL_DMA_DIRECTION_PERIPH_TO_MEMORY);
 
-  LL_DMA_SetStreamPriorityLevel(DMA1, LL_DMA_STREAM_1, LL_DMA_PRIORITY_LOW);
+  LL_DMA_SetStreamPriorityLevel(DMA2, LL_DMA_STREAM_1, LL_DMA_PRIORITY_LOW);
 
-  LL_DMA_SetMode(DMA1, LL_DMA_STREAM_1, LL_DMA_MODE_NORMAL);
+  LL_DMA_SetMode(DMA2, LL_DMA_STREAM_1, LL_DMA_MODE_NORMAL);
 
-  LL_DMA_SetPeriphIncMode(DMA1, LL_DMA_STREAM_1, LL_DMA_PERIPH_NOINCREMENT);
+  LL_DMA_SetPeriphIncMode(DMA2, LL_DMA_STREAM_1, LL_DMA_PERIPH_NOINCREMENT);
 
-  LL_DMA_SetMemoryIncMode(DMA1, LL_DMA_STREAM_1, LL_DMA_MEMORY_INCREMENT);
+  LL_DMA_SetMemoryIncMode(DMA2, LL_DMA_STREAM_1, LL_DMA_MEMORY_INCREMENT);
 
-  LL_DMA_SetPeriphSize(DMA1, LL_DMA_STREAM_1, LL_DMA_PDATAALIGN_BYTE);
+  LL_DMA_SetPeriphSize(DMA2, LL_DMA_STREAM_1, LL_DMA_PDATAALIGN_BYTE);
 
-  LL_DMA_SetMemorySize(DMA1, LL_DMA_STREAM_1, LL_DMA_MDATAALIGN_BYTE);
+  LL_DMA_SetMemorySize(DMA2, LL_DMA_STREAM_1, LL_DMA_MDATAALIGN_BYTE);
 
-  LL_DMA_DisableFifoMode(DMA1, LL_DMA_STREAM_1);
+  LL_DMA_DisableFifoMode(DMA2, LL_DMA_STREAM_1);
 
-  /* USART3 interrupt Init */
-  NVIC_SetPriority(USART3_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
-  NVIC_EnableIRQ(USART3_IRQn);
+  /* USART6 interrupt Init */
+  NVIC_SetPriority(USART6_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(USART6_IRQn);
 
-  /* USER CODE BEGIN USART3_Init 1 */
+  /* USER CODE BEGIN USART6_Init 1 */
 
-  /* USER CODE END USART3_Init 1 */
+  /* USER CODE END USART6_Init 1 */
   USART_InitStruct.BaudRate = 115200;
   USART_InitStruct.DataWidth = LL_USART_DATAWIDTH_8B;
   USART_InitStruct.StopBits = LL_USART_STOPBITS_1;
@@ -1626,12 +1723,12 @@ static void MX_USART3_UART_Init(void)
   USART_InitStruct.TransferDirection = LL_USART_DIRECTION_TX_RX;
   USART_InitStruct.HardwareFlowControl = LL_USART_HWCONTROL_NONE;
   USART_InitStruct.OverSampling = LL_USART_OVERSAMPLING_16;
-  LL_USART_Init(USART3, &USART_InitStruct);
-  LL_USART_ConfigAsyncMode(USART3);
-  LL_USART_Enable(USART3);
-  /* USER CODE BEGIN USART3_Init 2 */
+  LL_USART_Init(USART6, &USART_InitStruct);
+  LL_USART_ConfigAsyncMode(USART6);
+  LL_USART_Enable(USART6);
+  /* USER CODE BEGIN USART6_Init 2 */
 
-  /* USER CODE END USART3_Init 2 */
+  /* USER CODE END USART6_Init 2 */
 
 }
 
@@ -1644,11 +1741,12 @@ static void MX_DMA_Init(void)
   /* Init with LL driver */
   /* DMA controller clock enable */
   LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_DMA1);
+  LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_DMA2);
 
   /* DMA interrupt init */
-  /* DMA1_Stream1_IRQn interrupt configuration */
-  NVIC_SetPriority(DMA1_Stream1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
-  NVIC_EnableIRQ(DMA1_Stream1_IRQn);
+  /* DMA1_Stream0_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream0_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream0_IRQn);
   /* DMA1_Stream2_IRQn interrupt configuration */
   NVIC_SetPriority(DMA1_Stream2_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
   NVIC_EnableIRQ(DMA1_Stream2_IRQn);
@@ -1658,6 +1756,12 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream5_IRQn interrupt configuration */
   NVIC_SetPriority(DMA1_Stream5_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
   NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+  /* DMA1_Stream7_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA1_Stream7_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA1_Stream7_IRQn);
+  /* DMA2_Stream1_IRQn interrupt configuration */
+  NVIC_SetPriority(DMA2_Stream1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(DMA2_Stream1_IRQn);
 
 }
 
@@ -1687,6 +1791,9 @@ static void MX_GPIO_Init(void)
 
   /**/
   LL_GPIO_ResetOutputPin(FLASH_CS_GPIO_Port, FLASH_CS_Pin);
+
+  /**/
+  LL_GPIO_ResetOutputPin(GPIOD, LL_GPIO_PIN_0);
 
   /**/
   GPIO_InitStruct.Pin = LL_GPIO_PIN_2|TEST_OUTPUT_1_Pin|LL_GPIO_PIN_4|LL_GPIO_PIN_5 
@@ -1724,6 +1831,14 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
   GPIO_InitStruct.Pull = LL_GPIO_PULL_NO;
   LL_GPIO_Init(FLASH_CS_GPIO_Port, &GPIO_InitStruct);
+
+  /**/
+  GPIO_InitStruct.Pin = LL_GPIO_PIN_0;
+  GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
+  GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;
+  GPIO_InitStruct.Pull = LL_GPIO_PULL_NO;
+  LL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
 }
 
