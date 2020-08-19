@@ -9,6 +9,10 @@
 #include "SPI.h"
 
 void SPI_TransmitReceive(SPI_TypeDef *SPI,uint8_t* output,uint8_t* input, uint16_t size){
+
+	LL_SPI_DisableDMAReq_RX(SPI);
+	LL_SPI_DisableDMAReq_TX(SPI);
+
 	LL_SPI_SetTransferDirection(SPI,LL_SPI_FULL_DUPLEX);
 
 	if(!LL_SPI_IsEnabled(SPI)){
@@ -28,6 +32,10 @@ void SPI_TransmitReceive(SPI_TypeDef *SPI,uint8_t* output,uint8_t* input, uint16
 
 
 void SPI_Transmit(SPI_TypeDef *SPI,uint8_t* output,uint16_t size){
+
+	LL_SPI_DisableDMAReq_RX(SPI);
+	LL_SPI_DisableDMAReq_TX(SPI);
+
 	LL_SPI_SetTransferDirection(SPI,LL_SPI_FULL_DUPLEX);
 
 	if(!LL_SPI_IsEnabled(SPI)){
@@ -66,7 +74,61 @@ void SPI_Receive(SPI_TypeDef *SPI, uint8_t* input, uint16_t size){
 
 void SPI_Receive(SPI_TypeDef *SPI,uint8_t* input,uint16_t size){
 	//LL_SPI_ReceiveData8(SPI);
+	LL_SPI_DisableDMAReq_RX(SPI);
+	LL_SPI_DisableDMAReq_TX(SPI);
+
 	SPI_TransmitReceive(SPI,input,input,size);
+}
+
+
+
+
+
+
+
+void SPI_DMA_Transmit(SPI_TypeDef *SPI, DMA_TypeDef * DMA,uint32_t STREAM, uint8_t* data, uint16_t size){
+	LL_SPI_SetTransferDirection(SPI,LL_SPI_HALF_DUPLEX_TX);
+
+	LL_SPI_DisableDMAReq_RX(SPI);
+	LL_SPI_DisableDMAReq_TX(SPI);
+	LL_DMA_DisableStream(DMA,STREAM);
+
+	//clear all flag
+	DMA2->LIFCR=0x0F400000;
+	LL_DMA_SetDataLength(DMA,STREAM,(uint32_t)size);
+	LL_DMA_SetMemoryAddress(DMA,STREAM,(uint32_t)data);
+	LL_DMA_SetPeriphAddress(DMA,STREAM,LL_SPI_DMA_GetRegAddr(SPI));
+	//LL_DMA_EnableIT_TC(DMA,STREAM);
+
+	LL_DMA_EnableStream(DMA,STREAM);
+
+	LL_SPI_EnableDMAReq_TX(SPI);
+
+}
+
+
+
+void SPI_DMA_Receive(SPI_TypeDef *SPI, DMA_TypeDef * DMA,uint32_t STREAM, uint8_t* data, uint16_t size){
+	//LL_SPI_SetTransferDirection(SPI,LL_SPI_SIMPLEX_RX);
+
+	LL_SPI_DisableDMAReq_RX(SPI);
+	LL_SPI_DisableDMAReq_TX(SPI);
+	LL_DMA_DisableStream(DMA,STREAM);
+
+	//clear all flag
+	DMA2->LIFCR=0x0000003D;
+
+	LL_DMA_SetDataLength(DMA,STREAM,(uint32_t)size);
+	LL_DMA_SetMemoryAddress(DMA,STREAM,(uint32_t)data);
+	LL_DMA_SetPeriphAddress(DMA,STREAM,LL_SPI_DMA_GetRegAddr(SPI));
+	LL_DMA_EnableIT_TC(DMA,STREAM);
+
+	//LL_SPI_SetTransferDirection(SPI,LL_SPI_SIMPLEX_RX);
+	LL_SPI_SetTransferDirection(SPI,LL_SPI_FULL_DUPLEX);
+
+	LL_DMA_EnableStream(DMA,STREAM);
+
+	LL_SPI_EnableDMAReq_RX(SPI);
 }
 
 
@@ -78,10 +140,16 @@ void SPI_DMA_TransmitReceive(SPI_TypeDef *SPI,DMA_TypeDef * RX_DMA, DMA_TypeDef 
 	LL_DMA_DisableStream(RX_DMA,RX_STREAM);
 	LL_DMA_DisableStream(TX_DMA,TX_STREAM);
 
+	//DMA1
+	DMA1->LIFCR=0x0000003D;		//STREAM 0
+	DMA1->HIFCR=0x0F400000;		//STREAM 7
+	//DMA1->HIFCR=0x00000F40;	//STREAM 5
+
+
+	//DMA2
 	//clear all flag
-	DMA2->LIFCR=0x0F400000;
-	//clear all flag
-	DMA2->LIFCR=0x0000003D;
+	/*DMA2->LIFCR=0x0F400000;
+	DMA2->LIFCR=0x0000003D;*/
 
 	LL_DMA_SetDataLength(RX_DMA,RX_STREAM,(uint32_t)size);
 	LL_DMA_SetMemoryAddress(RX_DMA,RX_STREAM,(uint32_t)rx_data);
@@ -100,3 +168,4 @@ void SPI_DMA_TransmitReceive(SPI_TypeDef *SPI,DMA_TypeDef * RX_DMA, DMA_TypeDef 
 	LL_SPI_EnableDMAReq_TX(SPI);
 
 }
+

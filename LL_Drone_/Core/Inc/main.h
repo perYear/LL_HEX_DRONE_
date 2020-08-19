@@ -98,6 +98,10 @@ void Error_Handler(void);
 #define SWITCH_1_GPIO_Port GPIOA
 #define FLASH_CS_Pin LL_GPIO_PIN_15
 #define FLASH_CS_GPIO_Port GPIOA
+#define NRF24L01_CE_Pin LL_GPIO_PIN_0
+#define NRF24L01_CE_GPIO_Port GPIOD
+#define NRF24L01_CS_Pin LL_GPIO_PIN_1
+#define NRF24L01_CS_GPIO_Port GPIOD
 #define GPS_TX_Pin LL_GPIO_PIN_5
 #define GPS_TX_GPIO_Port GPIOD
 #define GPS_RX_Pin LL_GPIO_PIN_6

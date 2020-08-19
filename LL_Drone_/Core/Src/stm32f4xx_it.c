@@ -74,6 +74,7 @@ extern uint8_t condition_receiver;
 extern uint8_t condition_pid;
 
 extern uint8_t condition_gps;
+extern uint8_t condition_nrf24l01;
 
 /* USER CODE END EV */
 
@@ -219,7 +220,13 @@ void SysTick_Handler(void)
 void DMA1_Stream0_IRQHandler(void)
 {
   /* USER CODE BEGIN DMA1_Stream0_IRQn 0 */
-
+	if(LL_DMA_IsActiveFlag_TC0(DMA1)){
+		LL_DMA_ClearFlag_TC0(DMA1);
+		LL_GPIO_SetOutputPin(NRF24L01_CS_GPIO_Port,NRF24L01_CS_Pin);
+		TIM14->ARR=20;
+		LL_TIM_EnableCounter(TIM14);
+		LL_GPIO_SetOutputPin(NRF24L01_CE_GPIO_Port,NRF24L01_CE_Pin);
+	}
   /* USER CODE END DMA1_Stream0_IRQn 0 */
   
   /* USER CODE BEGIN DMA1_Stream0_IRQn 1 */
@@ -367,6 +374,25 @@ void USART2_IRQHandler(void)
   /* USER CODE BEGIN USART2_IRQn 1 */
 
   /* USER CODE END USART2_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM8 trigger and commutation interrupts and TIM14 global interrupt.
+  */
+void TIM8_TRG_COM_TIM14_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM8_TRG_COM_TIM14_IRQn 0 */
+	if(LL_TIM_IsActiveFlag_UPDATE(TIM14)){
+		LL_TIM_ClearFlag_UPDATE(TIM14);
+		LL_GPIO_ResetOutputPin(NRF24L01_CE_GPIO_Port,NRF24L01_CE_Pin);
+		LL_TIM_DisableCounter(TIM14);
+		condition_nrf24l01=0;
+	}
+  /* USER CODE END TIM8_TRG_COM_TIM14_IRQn 0 */
+  
+  /* USER CODE BEGIN TIM8_TRG_COM_TIM14_IRQn 1 */
+
+  /* USER CODE END TIM8_TRG_COM_TIM14_IRQn 1 */
 }
 
 /**

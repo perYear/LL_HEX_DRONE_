@@ -25,7 +25,6 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <math.h>
-#include "MPU6050.h"
 #include "I2C.h"
 #include "util.h"
 /* USER CODE END Includes */
@@ -65,6 +64,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_SPI3_Init(void);
 static void MX_USART6_UART_Init(void);
+static void MX_TIM14_Init(void);
 /* USER CODE BEGIN PFP */
 #define SBI(address, ab) ( address |= (0x01<<ab) )
 #define CBI(address, ab) ( address &= ~(0x01<<ab) )
@@ -98,6 +98,7 @@ uint8_t condition_receiver=0;
 uint8_t condition_pid=0;
 uint8_t condition_mag_baro=0;
 uint8_t condition_gps=0;
+uint8_t condition_nrf24l01=0;
 
 
 
@@ -150,6 +151,7 @@ int main(void)
   MX_ADC1_Init();
   MX_SPI3_Init();
   MX_USART6_UART_Init();
+  MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
 
   //----------------------------- test counter
@@ -161,6 +163,7 @@ int main(void)
 
   //----------------------------- timer
   uint8_t counter_2ms=0;
+  uint8_t counter_50ms=0;
 
   //----------------------------- unarmed condition
   uint8_t cali_condition=0;
@@ -201,6 +204,10 @@ int main(void)
   //----------------------------- receiver
   uint8_t receiver_dma_buf[33];
 
+  //----------------------------- nrf24l01
+  uint8_t nrf_rxdata[33]={0,};
+  uint32_t nrf24l01_counter;
+
   //-----------------------------
 
 
@@ -228,7 +235,7 @@ int main(void)
 ////////////////////////////
   printf("\r\nstart\r\n");
 ////////////////////////////
-
+  Drone_mode=Unarmed;
 
 //----------------------------------------------------------------------------------- usart1 command
   init_COMMAND(&command,USART1);
@@ -270,6 +277,12 @@ int main(void)
   I2C_Transmit(&(mpu6050.I2C),mpu6050.gyro_address,&mpu_reg_address,1);
   I2C_Receive_Circular_DMA(&(mpu6050.I2C),&mpu6050_DMA, mpu6050.gyro_address);
 
+//----------------------------------------------------------------------------------- nrf24l01
+  LL_SPI_Enable(SPI3);
+  nrf_init(&nrf_tx,SPI3,TX,NRF24L01_CS_GPIO_Port,NRF24L01_CS_Pin,NRF24L01_CE_GPIO_Port,NRF24L01_CE_Pin,32);
+  dump_reg(&nrf_tx);
+  LL_TIM_EnableIT_UPDATE(TIM14);
+
 //----------------------------------------------------------------------------------- load para
   load_pid_para();
   load_mag_para();
@@ -309,6 +322,7 @@ int main(void)
 //=========================================================================================================================	condition
 	  if(condition_1ms==1){
 		  counter_2ms++;
+		  counter_50ms++;
 		  //---------------------------------------------------------------------- 1ms condition
 		  condition_angle=1;
 
@@ -319,12 +333,22 @@ int main(void)
 			  counter_2ms=0;
 		  }
 
+		  //---------------------------------------------------------------------- 50ms condition
+		  if(counter_50ms>49){
+			  if(Drone_mode!=Unarmed){
+
+				  if(condition_nrf24l01==0)
+					  condition_nrf24l01=1;
+			  }
+			  counter_50ms=0;
+		  }
+
 		  //----------------------------------------------------------------------
 		  condition_1ms=0;
 	  }
 
 //========================================================================================================================= unarmed
-	  else if(timer[4]<1400){
+	  else if(Drone_mode==Unarmed){
 		  motor[0]=1000;
 		  motor[1]=1000;
 		  motor[2]=1000;
@@ -839,6 +863,45 @@ int main(void)
 	  }
 //=========================================================================================================================================================== follow me
 
+//=========================================================================================================================================================== nrf24l01 txdata
+	  if(condition_nrf24l01==1){
+		  uint8_t rxdata[33];
+		  uint8_t status;
+
+		  nrf_status(&nrf_tx,&status);
+
+		  if(status & 0x01){
+			  flush_TX(&nrf_tx);
+			  //printf("1:%.2X\r\n",status);
+		  }
+		  if(status&(0x10)){
+		  	status|= (0x01<<4);
+		  }
+		  if(status&(0x20)){
+		  	status|=(0x01<<5);
+		  }
+		  nrf_Write(&nrf_tx,0x07,&status);
+
+
+		  txdata.nrf_address=0xA0;
+		  txdata.pitch=status_data.pitch;
+		  txdata.roll=status_data.roll;
+		  txdata.motor[0]=motor[0];
+		  txdata.motor[1]=motor[1];
+		  txdata.motor[2]=motor[2];
+		  txdata.motor[3]=motor[3];
+		  txdata.motor[4]=motor[4];
+		  txdata.motor[5]=motor[5];
+
+		  /*LL_GPIO_ResetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
+		  SPI_TransmitReceive(SPI3,(uint8_t*)&txdata,rxdata,33);
+		  LL_GPIO_SetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
+		  nrf_enable_pulse(&nrf_tx,TIM14,20);
+		  printf("%.2x\r\n",rxdata[0]);*/
+		  LL_GPIO_ResetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
+		  SPI_DMA_TransmitReceive(SPI3,DMA1,DMA1,LL_DMA_STREAM_7,LL_DMA_STREAM_0,(uint8_t*)&txdata, nrf_rxdata,33);
+		  condition_nrf24l01=2;
+	  }
 
 //=========================================================================================================================================================== ibus receiver
 	  if(condition_receiver){
@@ -904,11 +967,14 @@ int main(void)
 		  }
 
 		  //---------------------------------------------------------------------- mode
-		  if(timer[5]<1300)
-			  Drone_mode=Normal;
-		  else if(timer[5]>1900)
-			  Drone_mode=GPS;
-
+		  if(timer[4]<1300)
+			  Drone_mode=Unarmed;
+		  else if(timer[4]>1800){
+			  if(timer[5]<1300)
+				  Drone_mode=Normal;
+			  else if(timer[5]>1900)
+				  Drone_mode=GPS;
+		  }
 		  //----------------------------------------------------------------------
 		  //uart_counter++;
 		  if(uart_counter>100){
@@ -1335,7 +1401,7 @@ static void MX_SPI3_Init(void)
   SPI_InitStruct.ClockPolarity = LL_SPI_POLARITY_LOW;
   SPI_InitStruct.ClockPhase = LL_SPI_PHASE_1EDGE;
   SPI_InitStruct.NSS = LL_SPI_NSS_SOFT;
-  SPI_InitStruct.BaudRate = LL_SPI_BAUDRATEPRESCALER_DIV2;
+  SPI_InitStruct.BaudRate = LL_SPI_BAUDRATEPRESCALER_DIV4;
   SPI_InitStruct.BitOrder = LL_SPI_MSB_FIRST;
   SPI_InitStruct.CRCCalculation = LL_SPI_CRCCALCULATION_DISABLE;
   SPI_InitStruct.CRCPoly = 10;
@@ -1522,6 +1588,42 @@ static void MX_TIM11_Init(void)
   /* USER CODE BEGIN TIM11_Init 2 */
 
   /* USER CODE END TIM11_Init 2 */
+
+}
+
+/**
+  * @brief TIM14 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM14_Init(void)
+{
+
+  /* USER CODE BEGIN TIM14_Init 0 */
+
+  /* USER CODE END TIM14_Init 0 */
+
+  LL_TIM_InitTypeDef TIM_InitStruct = {0};
+
+  /* Peripheral clock enable */
+  LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_TIM14);
+
+  /* TIM14 interrupt Init */
+  NVIC_SetPriority(TIM8_TRG_COM_TIM14_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
+  NVIC_EnableIRQ(TIM8_TRG_COM_TIM14_IRQn);
+
+  /* USER CODE BEGIN TIM14_Init 1 */
+
+  /* USER CODE END TIM14_Init 1 */
+  TIM_InitStruct.Prescaler = 83;
+  TIM_InitStruct.CounterMode = LL_TIM_COUNTERMODE_UP;
+  TIM_InitStruct.Autoreload = 0;
+  TIM_InitStruct.ClockDivision = LL_TIM_CLOCKDIVISION_DIV1;
+  LL_TIM_Init(TIM14, &TIM_InitStruct);
+  LL_TIM_DisableARRPreload(TIM14);
+  /* USER CODE BEGIN TIM14_Init 2 */
+
+  /* USER CODE END TIM14_Init 2 */
 
 }
 
@@ -1793,7 +1895,7 @@ static void MX_GPIO_Init(void)
   LL_GPIO_ResetOutputPin(FLASH_CS_GPIO_Port, FLASH_CS_Pin);
 
   /**/
-  LL_GPIO_ResetOutputPin(GPIOD, LL_GPIO_PIN_0);
+  LL_GPIO_ResetOutputPin(GPIOD, NRF24L01_CE_Pin|NRF24L01_CS_Pin);
 
   /**/
   GPIO_InitStruct.Pin = LL_GPIO_PIN_2|TEST_OUTPUT_1_Pin|LL_GPIO_PIN_4|LL_GPIO_PIN_5 
@@ -1833,7 +1935,7 @@ static void MX_GPIO_Init(void)
   LL_GPIO_Init(FLASH_CS_GPIO_Port, &GPIO_InitStruct);
 
   /**/
-  GPIO_InitStruct.Pin = LL_GPIO_PIN_0;
+  GPIO_InitStruct.Pin = NRF24L01_CE_Pin|NRF24L01_CS_Pin;
   GPIO_InitStruct.Mode = LL_GPIO_MODE_OUTPUT;
   GPIO_InitStruct.Speed = LL_GPIO_SPEED_FREQ_LOW;
   GPIO_InitStruct.OutputType = LL_GPIO_OUTPUT_PUSHPULL;

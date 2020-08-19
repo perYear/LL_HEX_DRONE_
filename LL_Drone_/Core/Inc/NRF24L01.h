@@ -15,7 +15,7 @@
 #define INC_NRF240L1_H_
 
 
-#define TXDATA_LENGTH 12
+#define TXDATA_LENGTH 32
 
 typedef enum _type{
 	RX=0,
@@ -35,6 +35,19 @@ typedef struct{
 	GPIO_TypeDef* chip_enable_port;
 	uint16_t chip_enable_pin;
 }NRF24L01;
+
+typedef struct __attribute__((packed)){
+	uint8_t nrf_address;
+	//uint32_t nrf_tot_counter;
+	float pitch;
+	float roll;
+	//float yaw;
+	int32_t motor[6];
+}NRF24L01_TX_DATA1;
+
+NRF24L01 nrf_tx;
+NRF24L01_TX_DATA1 txdata;
+
 
 
 void nrf_Write(NRF24L01* nrf,uint8_t address, uint8_t *data);

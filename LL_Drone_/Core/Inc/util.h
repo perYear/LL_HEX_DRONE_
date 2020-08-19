@@ -7,8 +7,10 @@
 #include "main.h"
 #include "spi_flash.h"
 #include "PID.h"
+#include "MPU6050.h"
 #include "HMC5883.h"
 #include "GPS.h"
+#include "NRF24L01.h"
 #include "mode.h"
 
 #ifndef INC_UTIL_H_
