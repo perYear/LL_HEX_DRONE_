@@ -76,6 +76,7 @@ extern uint8_t condition_pid;
 extern uint8_t condition_gps;
 extern uint8_t condition_nrf24l01;
 
+
 /* USER CODE END EV */
 
 /******************************************************************************/

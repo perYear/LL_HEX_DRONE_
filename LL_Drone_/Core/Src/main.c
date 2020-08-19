@@ -206,7 +206,8 @@ int main(void)
 
   //----------------------------- nrf24l01
   uint8_t nrf_rxdata[33]={0,};
-  uint32_t nrf24l01_counter;
+  uint8_t nrf_data1_2=1;
+  uint32_t nrf24l01_counter=0;
 
   //-----------------------------
 
@@ -279,7 +280,7 @@ int main(void)
 
 //----------------------------------------------------------------------------------- nrf24l01
   LL_SPI_Enable(SPI3);
-  nrf_init(&nrf_tx,SPI3,TX,NRF24L01_CS_GPIO_Port,NRF24L01_CS_Pin,NRF24L01_CE_GPIO_Port,NRF24L01_CE_Pin,32);
+  nrf_init(&nrf_tx,SPI3,TX,NRF24L01_CS_GPIO_Port,NRF24L01_CS_Pin,NRF24L01_CE_GPIO_Port,NRF24L01_CE_Pin,29);
   dump_reg(&nrf_tx);
   LL_TIM_EnableIT_UPDATE(TIM14);
 
@@ -335,10 +336,8 @@ int main(void)
 
 		  //---------------------------------------------------------------------- 50ms condition
 		  if(counter_50ms>49){
-			  if(Drone_mode!=Unarmed){
-
-				  if(condition_nrf24l01==0)
-					  condition_nrf24l01=1;
+			  if(Drone_mode!=Unarmed && condition_nrf24l01==0){
+				  condition_nrf24l01=1;
 			  }
 			  counter_50ms=0;
 		  }
@@ -865,11 +864,9 @@ int main(void)
 
 //=========================================================================================================================================================== nrf24l01 txdata
 	  if(condition_nrf24l01==1){
-		  uint8_t rxdata[33];
 		  uint8_t status;
 
 		  nrf_status(&nrf_tx,&status);
-
 		  if(status & 0x01){
 			  flush_TX(&nrf_tx);
 			  //printf("1:%.2X\r\n",status);
@@ -881,25 +878,40 @@ int main(void)
 		  	status|=(0x01<<5);
 		  }
 		  nrf_Write(&nrf_tx,0x07,&status);
+		  if(nrf_data1_2==1){
+			  nrf24l01_counter++;
+			  txdata1.nrf_address=0xA0;
+			  txdata1.id='C';
+			  txdata1.nrf_tot_counter=nrf24l01_counter;
+			  txdata1.motor[0]=motor[0];
+			  txdata1.motor[1]=motor[1];
+			  txdata1.motor[2]=motor[2];
+			  txdata1.motor[3]=motor[3];
+			  txdata1.motor[4]=motor[4];
+			  txdata1.motor[5]=motor[5];
 
 
-		  txdata.nrf_address=0xA0;
-		  txdata.pitch=status_data.pitch;
-		  txdata.roll=status_data.roll;
-		  txdata.motor[0]=motor[0];
-		  txdata.motor[1]=motor[1];
-		  txdata.motor[2]=motor[2];
-		  txdata.motor[3]=motor[3];
-		  txdata.motor[4]=motor[4];
-		  txdata.motor[5]=motor[5];
+			  txdata2.nrf_address=0xA0;
+			  txdata2.id='D';
+			  txdata2.nrf_tot_counter=nrf24l01_counter;
+			  txdata2.pitch=status_data.pitch;
+			  txdata2.roll=status_data.roll;
+			  txdata2.yaw=status_data.yaw;
+			  txdata2.dif_yaw=status_data.dif_yaw;
+			  txdata2.gps_set_pitch=gps_set_pitch;
+			  txdata2.gps_set_roll=gps_set_roll;
 
-		  /*LL_GPIO_ResetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
-		  SPI_TransmitReceive(SPI3,(uint8_t*)&txdata,rxdata,33);
-		  LL_GPIO_SetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
-		  nrf_enable_pulse(&nrf_tx,TIM14,20);
-		  printf("%.2x\r\n",rxdata[0]);*/
-		  LL_GPIO_ResetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
-		  SPI_DMA_TransmitReceive(SPI3,DMA1,DMA1,LL_DMA_STREAM_7,LL_DMA_STREAM_0,(uint8_t*)&txdata, nrf_rxdata,33);
+			  LL_GPIO_ResetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
+			  SPI_DMA_TransmitReceive(SPI3,DMA1,DMA1,LL_DMA_STREAM_7,LL_DMA_STREAM_0,(uint8_t*)&txdata1, nrf_rxdata,30);
+			  nrf_data1_2=2;
+		  }
+		  else if(nrf_data1_2==2){
+
+			  LL_GPIO_ResetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
+			  SPI_DMA_TransmitReceive(SPI3,DMA1,DMA1,LL_DMA_STREAM_7,LL_DMA_STREAM_0,(uint8_t*)&txdata2, nrf_rxdata,30);
+			  nrf_data1_2=1;
+		  }
+
 		  condition_nrf24l01=2;
 	  }
 
