@@ -18,7 +18,7 @@
 #define HMC5883_ADDRESS  0b00011110<<1
 #define mag_para_size 6
 
-#define YAW_MEAN_ARR_NUM 50
+#define YAW_MEAN_ARR_NUM 60
 
 #define offset_x mag_para_arr[0]
 #define offset_y mag_para_arr[1]

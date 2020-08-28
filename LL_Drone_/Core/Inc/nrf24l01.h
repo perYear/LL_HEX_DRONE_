@@ -36,35 +36,8 @@ typedef struct{
 	uint16_t chip_enable_pin;
 }NRF24L01;
 
-typedef struct __attribute__((packed)){		// 1 + 29
-	uint8_t nrf_address;		//1
-
-	uint8_t id;					//1
-	uint32_t nrf_tot_counter;	//4
-
-	int32_t motor[6];			//24
-
-}NRF24L01_TX_DATA1;
-
-typedef struct __attribute__((packed)){		// 1 + 29
-	uint8_t nrf_address;		//1
-
-	uint8_t id;					//1
-	uint32_t nrf_tot_counter;	//4
-
-	float pitch;				//4
-	float roll;					//4
-	float yaw;					//4
-	float dif_yaw;				//4
-
-	float gps_set_pitch;		//4
-	float gps_set_roll;			//4
-
-}NRF24L01_TX_DATA2;
-
 NRF24L01 nrf_tx;
-NRF24L01_TX_DATA1 txdata1;
-NRF24L01_TX_DATA2 txdata2;
+
 
 
 

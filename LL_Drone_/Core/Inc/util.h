@@ -11,6 +11,7 @@
 #include "HMC5883.h"
 #include "GPS.h"
 #include "NRF24L01.h"
+#include "MS5611.h"
 #include "mode.h"
 
 #ifndef INC_UTIL_H_
@@ -25,6 +26,9 @@
 
 #define gps_flash_address 0x2000
 #define gps_flash_size gps_para_size*4
+
+#define baro_flash_address 0x3000
+#define baro_flash_size baro_para_size*4
 
 typedef struct{
 	float pitch;
@@ -41,6 +45,7 @@ typedef struct{
 	float set_yaw;
 
 	int32_t throttle;
+	int32_t pressure_throttle;
 
 }STATUS_DATA;
 
@@ -75,5 +80,8 @@ void load_mag_para();
 
 void save_GPS_para();
 void load_GPS_para();
+
+void save_baro_para();
+void load_baro_para();
 
 #endif /* INC_UTIL_H_ */

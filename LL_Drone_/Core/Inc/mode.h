@@ -9,9 +9,10 @@
 #define INC_MODE_H_
 
 typedef enum{
+	Error=-1,
 	Unarmed=0,
 	Normal=1,
-	GPS=2
+	GPS_holding=2
 }Mode;
 
 Mode Drone_mode;

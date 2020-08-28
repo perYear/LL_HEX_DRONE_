@@ -35,7 +35,6 @@
 #define	rate_i rate_pid.rate_pid_para[1]
 #define	rate_d rate_pid.rate_pid_para[2]
 
-
 #define para_p rate_pid_para[0]
 #define para_i rate_pid_para[1]
 #define para_d rate_pid_para[2]

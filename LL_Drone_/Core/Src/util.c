@@ -22,124 +22,54 @@ void init_COMMAND(UART_COMMAND* command,USART_TypeDef* uart){
 
 //=============================================================================================================================== hexa pid
 void save_pid_para(){
-	uint32_t temp;
-	uint8_t save_buf[pid_flash_size];
-	uint8_t i,j;
+	float buf[pid_para_size];
 
-	//----------------------------------------------------------- pitch
-	//stabilize para
-	for(i=0;i<2;i++){
-		temp=*(unsigned*)&(pitch_para.stabilize_pid_para[i]);
-		for(j=0;j<4;j++){
-			save_buf[4*i+j]=0x000000ff&temp;
-			temp=temp>>8;
-		}
-	}
-	//rate pra
-	for(i=0;i<3;i++){
-		temp=*(unsigned*)&(pitch_para.rate_pid.rate_pid_para[i]);
-		for(j=0;j<4;j++){
-			save_buf[4*i+j + 8]=0x000000ff&temp;
-			temp=temp>>8;
-		}
-	}
-	//----------------------------------------------------------- roll
-	//stabilize para
-	for(i=0;i<2;i++){
-		temp=*(unsigned*)&(roll_para.stabilize_pid_para[i]);
-		for(j=0;j<4;j++){
-			save_buf[4*i+j + 20]=0x000000ff&temp;
-			temp=temp>>8;
-		}
-	}
-	//rate para
-	for(i=0;i<3;i++){
-		temp=*(unsigned*)&(roll_para.rate_pid.rate_pid_para[i]);
-		for(j=0;j<4;j++){
-			save_buf[4*i+j + 28]=0x000000ff&temp;
-			temp=temp>>8;
-		}
-	}
-	//----------------------------------------------------------- yaw
-	for(i=0;i<3;i++){
-		temp=*(unsigned*)&(yaw_para.rate_pid_para[i]);
-		for(j=0;j<4;j++){
-			save_buf[4*i+j + 40]=0x000000ff&temp;
-			temp=temp>>8;
-		}
-	}
-	//-----------------------------------------------------------
+	buf[0]=pitch_para.stabilize_p;
+	buf[1]=pitch_para.stabilize_i;
+	buf[2]=pitch_para.rate_p;
+	buf[3]=pitch_para.rate_i;
+	buf[4]=pitch_para.rate_d;
 
+	buf[5]=roll_para.stabilize_p;
+	buf[6]=roll_para.stabilize_i;
+	buf[7]=roll_para.rate_p;
+	buf[8]=roll_para.rate_i;
+	buf[9]=roll_para.rate_d;
+
+	buf[10]=yaw_para.para_p;
+	buf[11]=yaw_para.para_i;
+	buf[12]=yaw_para.para_d;
 
 	flash_sector_erase(SPI1,pid_flash_address);
-	flash_write(SPI1,pid_flash_address,save_buf,pid_flash_size);
+	flash_write(SPI1,pid_flash_address,(uint8_t*)buf,pid_flash_size);
 }
 
 void load_pid_para(){
-	uint32_t temp;
-	uint8_t load_buf[pid_flash_size];
-	uint8_t i,j;
+	float buf[pid_para_size];
 
-	flash_read(SPI1,pid_flash_address,load_buf,pid_flash_size);
-	//----------------------------------------------------------- pitch
-	//stabilize para
-	for(i=0;i<2;i++){
-		temp=0;
-		for(j=0;j<4;j++){
-			temp+=load_buf[4*i+j]<<(j*8);
-		}
-		pitch_para.stabilize_pid_para[i]=*(float*)&temp;
-	}
-	//rate para
-	for(i=0;i<3;i++){
-		temp=0;
-		for(j=0;j<4;j++){
-			temp+=load_buf[4*i+j+8]<<(j*8);
-		}
-		pitch_para.rate_pid.rate_pid_para[i]=*(float*)&temp;
-	}
-	//----------------------------------------------------------- roll
-	//stabilize para
-	for(i=0;i<2;i++){
-		temp=0;
-		for(j=0;j<4;j++){
-			temp+=load_buf[4*i+j+20]<<(j*8);
-		}
-		roll_para.stabilize_pid_para[i]=*(float*)&temp;
-	}
-	//rate para
-	for(i=0;i<3;i++){
-		temp=0;
-		for(j=0;j<4;j++){
-			temp+=load_buf[4*i+j+28]<<(j*8);
-		}
-		roll_para.rate_pid.rate_pid_para[i]=*(float*)&temp;
-	}
-	//----------------------------------------------------------- yaw
-	for(i=0;i<3;i++){
-		temp=0;
-		for(j=0;j<4;j++){
-			temp+=load_buf[4*i+j+40]<<(j*8);
-		}
-		yaw_para.rate_pid_para[i]=*(float*)&temp;
-	}
-	//-----------------------------------------------------------
+	flash_read(SPI1,pid_flash_address,(uint8_t*)buf,pid_flash_size);
+
+	pitch_para.stabilize_p=buf[0];
+	pitch_para.stabilize_i=buf[1];
+	pitch_para.rate_p=buf[2];
+	pitch_para.rate_i=buf[3];
+	pitch_para.rate_d=buf[4];
+
+	roll_para.stabilize_p=buf[5];
+	roll_para.stabilize_i=buf[6];
+	roll_para.rate_p=buf[7];
+	roll_para.rate_i=buf[8];
+	roll_para.rate_d=buf[9];
+
+	yaw_para.para_p=buf[10];
+	yaw_para.para_i=buf[11];
+	yaw_para.para_d=buf[12];
 }
 
 void show_pid_para(){
 	float data[pid_para_size];
-	uint32_t temp;
-	uint8_t load_buf[pid_flash_size];
-	uint8_t i,j;
 
-	flash_read(SPI1,pid_flash_address,load_buf,pid_flash_size);
-	for(i=0;i<pid_para_size;i++){
-		temp=0;
-		for(j=0;j<4;j++){
-			temp+=load_buf[4*i+j]<<(j*8);
-		}
-		data[i]=*(float*)&temp;
-	}
+	flash_read(SPI1,pid_flash_address,(uint8_t*)data,pid_flash_size);
 
 	printf("\n\rHexa_PID_Check\r\n");
 	printf("=================================\r\n");
@@ -184,35 +114,13 @@ void print_pid_para(){
 
 //=============================================================================================================================== magnetometer
 void save_mag_para(){
-	uint32_t temp;
-	uint8_t save_buf[mag_flash_size];
-	uint8_t i,j;
-
-	for(i=0;i<mag_para_size;i++){
-		temp=*(unsigned*)&(hmc5883.mag_para_arr[i]);
-		for(j=0;j<4;j++){
-			save_buf[4*i+j]=0x000000ff&temp;
-			temp=temp>>8;
-		}
-	}
 	flash_sector_erase(SPI1,mag_flash_address);
-	flash_write(SPI1,mag_flash_address,save_buf,mag_flash_size);
+	flash_write(SPI1,mag_flash_address,(uint8_t*)hmc5883.mag_para_arr,mag_flash_size);
 
 }
 
 void load_mag_para(){
-	uint32_t temp;
-	uint8_t load_buf[mag_flash_size];
-	uint8_t i,j;
-
-	flash_read(SPI1,mag_flash_address,load_buf,mag_flash_size);
-	for(i=0;i<mag_para_size;i++){
-		temp=0;
-		for(j=0;j<4;j++){
-			temp+=load_buf[4*i+j]<<(j*8);
-		}
-		hmc5883.mag_para_arr[i]=*(float*)&temp;
-	}
+	flash_read(SPI1,mag_flash_address,(uint8_t*)hmc5883.mag_para_arr,mag_flash_size);
 }
 
 void print_mag_para(){
@@ -230,50 +138,18 @@ void print_mag_para(){
 
 //=============================================================================================================================== GPS
 void save_GPS_para(){
-	uint32_t temp;
-	uint8_t save_buf[gps_flash_size];
-	uint8_t i,j;
-
-	for(i=0;i<gps_para_size;i++){
-		temp=*(unsigned*)&(gps_para[i]);
-		for(j=0;j<4;j++){
-			save_buf[4*i+j]=0x000000ff&temp;
-			temp=temp>>8;
-		}
-	}
 	flash_sector_erase(SPI1,gps_flash_address);
-	flash_write(SPI1,gps_flash_address,save_buf,gps_flash_size);
+	flash_write(SPI1,gps_flash_address,(uint8_t*)gps_para,gps_flash_size);
 
 }
 
 void load_GPS_para(){
-	uint32_t temp;
-	uint8_t load_buf[gps_flash_size];
-	uint8_t i,j;
-
-	flash_read(SPI1,gps_flash_address,load_buf,gps_flash_size);
-	for(i=0;i<gps_para_size;i++){
-		temp=0;
-		for(j=0;j<4;j++){
-			temp+=load_buf[4*i+j]<<(j*8);
-		}
-		gps_para[i]=*(float*)&temp;
-	}
+	flash_read(SPI1,gps_flash_address,(uint8_t*)gps_para,gps_flash_size);
 }
 void show_GPS_para(){
 	float data[gps_para_size];
-	uint32_t temp;
-	uint8_t load_buf[gps_flash_size];
-	uint8_t i,j;
+	flash_read(SPI1,gps_flash_address,(uint8_t*)data,gps_flash_size);
 
-	flash_read(SPI1,gps_flash_address,load_buf,gps_flash_size);
-	for(i=0;i<gps_para_size;i++){
-		temp=0;
-		for(j=0;j<4;j++){
-			temp+=load_buf[4*i+j]<<(j*8);
-		}
-		data[i]=*(float*)&temp;
-	}
 
 	printf("\n\rGPS_PID_Check\r\n");
 	printf("=================================\r\n");
@@ -289,6 +165,37 @@ void print_GPS_para(){
 	printf("gp:%.4f\r\n",gps_p);
 	printf("gi:%.4f\r\n",gps_i);
 	printf("gd:%.4f\r\n",gps_d);
+	printf("=================================\n\n\r");
+}
+
+//=============================================================================================================================== barometer
+void save_baro_para(){
+	flash_sector_erase(SPI1,baro_flash_address);
+	flash_write(SPI1,baro_flash_address,(uint8_t*)baro_para,baro_flash_size);
+}
+
+void load_baro_para(){
+	flash_read(SPI1,baro_flash_address,(uint8_t*)baro_para,baro_flash_size);
+}
+
+void show_baro_para(){
+	float data[baro_para_size];
+	flash_read(SPI1,baro_flash_address,(uint8_t*)data,baro_flash_size);
+
+	printf("\n\rbaro_PID_Check\r\n");
+	printf("=================================\r\n");
+	printf("bp:%.4f\r\n",data[0]);
+	printf("bi:%.4f\r\n",data[1]);
+	printf("bd:%.4f\r\n",data[2]);
+	printf("=================================\n\n\r");
+}
+
+void print_baro_para(){
+	printf("\n\rbaro_PID\r\n");
+	printf("=================================\r\n");
+	printf("bp:%.4f\r\n",baro_p);
+	printf("bi:%.4f\r\n",baro_i);
+	printf("bd:%.4f\r\n",baro_d);
 	printf("=================================\n\n\r");
 }
 
@@ -497,15 +404,15 @@ void COMMAND_Decode(UART_COMMAND* command){
 		temp_float=atoff(&command->command_buf[2]);
 		if(command->command_buf[1]=='p'){
 			gps_p=temp_float;
-			printf("gp: %.4f\n\r",gps_p);
+			printf("gp: %.4f\r\n",gps_p);
 		}
 		else if(command->command_buf[1]=='i'){
 			gps_i=temp_float;
-			printf("gi: %.4f\n\r",gps_i);
+			printf("gi: %.4f\r\n",gps_i);
 		}
 		else if(command->command_buf[1]=='d'){
 			gps_d=temp_float;
-			printf("gd: %.4f\n\r",gps_d);
+			printf("gd: %.4f\r\n",gps_d);
 		}
 
 		//print all
@@ -538,18 +445,44 @@ void COMMAND_Decode(UART_COMMAND* command){
 	else if(command->command_buf[0]=='b'){
 		temp_float=atoff(&command->command_buf[2]);
 		if(command->command_buf[1]=='p'){
-
+			baro_p=temp_float;
+			printf("bp: %.4f\r\n",baro_p);
 		}
 		else if(command->command_buf[1]=='i'){
-
+			baro_i=temp_float;
+			printf("bi: %.4f\r\n",baro_i);
 		}
 		else if(command->command_buf[1]=='d'){
-
+			baro_d=temp_float;
+			printf("bd: %.4f\r\n",baro_d);
+		}
+		else if(command->command_buf[1]=='A'){
+			printf("bA\r\n");
+			print_baro_para();
+		}
+		//check flash data
+		else if(command->command_buf[1]=='C'){
+			printf("bC\r\n");
+			show_baro_para();
+		}
+		//load flash to memory
+		else if(command->command_buf[1]=='L'){
+			printf("bL\r\n");
+			load_baro_para();
+			print_baro_para();
+		}
+		//save data
+		else if(command->command_buf[1]=='S'){
+			printf("bS\r\n");
+			save_baro_para();
+			print_baro_para();
 		}
 		else{
-
+			error_command=1;
 		}
 	}
+
+//========================================================================================================================== error_command
 	else{
 		error_command=1;
 	}

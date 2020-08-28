@@ -24,6 +24,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 #include "I2C.h"
 #include "util.h"
@@ -160,10 +161,11 @@ int main(void)
   uint16_t mag_counter=0;
   uint16_t motor_counter=0;
   uint16_t battery_counter=0;
+  uint16_t baro_counter=0;
 
   //----------------------------- timer
   uint8_t counter_2ms=0;
-  uint8_t counter_50ms=0;
+  uint8_t counter_100ms=0;
 
   //----------------------------- unarmed condition
   uint8_t cali_condition=0;
@@ -190,6 +192,10 @@ int main(void)
   uint8_t mag_dma_buf[6];
   uint8_t mag_baro=0;
 
+  float set_pressure=0.0;
+  float altitude_mem=0.0;
+  int8_t altitude_set_pos=0;
+
   //----------------------------- GPS
   uint8_t condition_gps_2ms=0;
 
@@ -206,11 +212,53 @@ int main(void)
 
   //----------------------------- nrf24l01
   uint8_t nrf_rxdata[33]={0,};
-  uint8_t nrf_data1_2=1;
-  uint32_t nrf24l01_counter=0;
+  uint16_t nrf24l01_counter=0;
 
   //-----------------------------
+//#define motor_TEST
+#define baro_TEST
+#if defined motor_TEST
+#define packet_size 31
+#define MOTOR_ARR_NUM 50
+  uint16_t motor_arr[6][MOTOR_ARR_NUM]={0,};
+  uint32_t motor_sum[6]={0,};
+  uint16_t motor_arr_pointer=0;
 
+  int32_t pre_motor[6];
+
+  typedef struct __attribute__((packed)){		// 1 + packet_size(32)
+	  uint8_t reg;					// 1
+	  uint8_t id;					// 1
+	  uint16_t counter;				// 2
+	  uint16_t motor_mean[6];		// 12
+	  uint16_t motor_d_sum[6];		// 12
+	  float yaw_d_sum;				// 4
+  }DATA_TYPE1;
+
+  typedef struct __attribute__((packed)){
+	  uint8_t reg;
+	  uint16_t counter;				//2
+	  float yaw_d_max;				//4
+  }DATA_TYPE2;
+
+  DATA_TYPE1 packet1={0,};
+  DATA_TYPE1 packet2={0,};
+
+#elif defined baro_TEST
+#define packet_size 15
+  typedef struct __attribute__((packed)){		// 1 + packet_size(15)
+	  uint8_t reg;					// 1
+	  uint8_t id;					// 1
+	  uint16_t counter;				// 2
+	  float set_pressure;			// 4
+	  float actual_pressure;		// 4
+	  float altitude_throttle;		// 4
+  }DATA_TYPE1;
+
+  DATA_TYPE1 packet={0,};
+#else
+#define packet_size 10
+#endif
 
   /*hmc5883.offset_x=70.31;
   hmc5883.offset_y=36.49;
@@ -251,7 +299,7 @@ int main(void)
   LL_DMA_SetDataLength(DMA2,LL_DMA_STREAM_1,33);
   //DMA1->LIFCR=0x003D0000;	//DMA1 STREAM2 CLEAR ALL FLAG
   //DMA1->LIFCR=0x00000F40;	//DMA1 STREAM1 CLEAR ALL FLAG
-  DMA2->LIFCR=0x00000F40;	//DMA1 STREAM1 CLEAR ALL FLAG
+  DMA2->LIFCR=0x00000F40;	//DMA2 STREAM1 CLEAR ALL FLAG
   LL_DMA_EnableStream(DMA2,LL_DMA_STREAM_1);
   LL_USART_EnableDMAReq_RX(USART6);
   LL_USART_EnableIT_IDLE(USART6);
@@ -264,6 +312,9 @@ int main(void)
   mag_reg_address=0x03;
   I2C_Transmit(&hmc5883.i2c,hmc5883.magneto_address,&mag_reg_address,1);
   I2C_Receive_DMA(&hmc5883.i2c,&i2c3_DMA,hmc5883.magneto_address,(uint32_t)mag_dma_buf,LL_I2C_DMA_GetRegAddr(I2C3),6);
+
+//----------------------------------------------------------------------------------- MS5611
+  MS_init(&ms5611,I2C3);
 
 //----------------------------------------------------------------------------------- GPS
   init_GPS(&gps_raw_message,USART2,DMA1,LL_DMA_STREAM_5);
@@ -280,7 +331,7 @@ int main(void)
 
 //----------------------------------------------------------------------------------- nrf24l01
   LL_SPI_Enable(SPI3);
-  nrf_init(&nrf_tx,SPI3,TX,NRF24L01_CS_GPIO_Port,NRF24L01_CS_Pin,NRF24L01_CE_GPIO_Port,NRF24L01_CE_Pin,29);
+  nrf_init(&nrf_tx,SPI3,TX,NRF24L01_CS_GPIO_Port,NRF24L01_CS_Pin,NRF24L01_CE_GPIO_Port,NRF24L01_CE_Pin,packet_size);
   dump_reg(&nrf_tx);
   LL_TIM_EnableIT_UPDATE(TIM14);
 
@@ -288,6 +339,7 @@ int main(void)
   load_pid_para();
   load_mag_para();
   load_GPS_para();
+  load_baro_para();
 
 //----------------------------------------------------------------------------------- pwm timer
   LL_TIM_EnableIT_UPDATE(TIM2);
@@ -323,7 +375,7 @@ int main(void)
 //=========================================================================================================================	condition
 	  if(condition_1ms==1){
 		  counter_2ms++;
-		  counter_50ms++;
+		  counter_100ms++;
 		  //---------------------------------------------------------------------- 1ms condition
 		  condition_angle=1;
 
@@ -334,12 +386,15 @@ int main(void)
 			  counter_2ms=0;
 		  }
 
-		  //---------------------------------------------------------------------- 50ms condition
-		  if(counter_50ms>49){
+		  //---------------------------------------------------------------------- 100ms condition
+		  if(counter_100ms>99){
 			  if(Drone_mode!=Unarmed && condition_nrf24l01==0){
 				  condition_nrf24l01=1;
+#ifdef motor_TEST
+				  memset(&packet2,0,sizeof(DATA_TYPE1));
+#endif
 			  }
-			  counter_50ms=0;
+			  counter_100ms=0;
 		  }
 
 		  //----------------------------------------------------------------------
@@ -359,6 +414,7 @@ int main(void)
 		  roll_para.stabilize_i_mem=0;
 		  roll_para.dual_rate_i_mem=0;
 		  yaw_para.rate_i_mem=0;
+		  nrf24l01_counter=0;
 		  //printf("aa\r\n");
 
 		  //--------------------------------------------------------------------- gyro cali
@@ -507,6 +563,12 @@ int main(void)
 		  status_data.pre_pitch=status_data.pitch;
 		  status_data.pre_roll=status_data.roll;
 
+		  if(Drone_mode==Error){
+			  LL_GPIO_SetOutputPin(GPIOE,LL_GPIO_PIN_7);
+			  LL_GPIO_SetOutputPin(GPIOE,LL_GPIO_PIN_8);
+			  LL_GPIO_SetOutputPin(GPIOE,LL_GPIO_PIN_9);
+		  }
+
 		  //counter++;
 		  if(counter>200){
 			  /*printf("%d\t%d\t%d\r\n",angle.getmpuaccx,angle.getmpuaccy,angle.getmpuaccz);
@@ -527,6 +589,7 @@ int main(void)
 //=========================================================================================================================================================== PID
 	  else if(condition_pid){
 		  float yaw_limit;
+		  float yaw_d;
 		  //LL_GPIO_TogglePin(GPIOE,LL_GPIO_PIN_10);
 
 		  //LL_GPIO_SetOutputPin(GPIOB,LL_GPIO_PIN_1);
@@ -549,7 +612,9 @@ int main(void)
 				  yaw_para.rate_i_mem+=status_data.dif_yaw * pid_dt * yaw_para.para_i;
 			  }
 		  }
-		  yaw_para.pid_result = yaw_para.para_p*status_data.dif_yaw + yaw_para.para_d*(status_data.dif_yaw-status_data.pre_dif_yaw) + yaw_para.rate_i_mem;
+		  yaw_d= yaw_para.para_d*(status_data.dif_yaw-status_data.pre_dif_yaw);
+
+		  yaw_para.pid_result = yaw_para.para_p*status_data.dif_yaw + yaw_d + yaw_para.rate_i_mem;
 
 
 		  yaw_limit=((float)(status_data.throttle-1000)*0.7)+50.0;
@@ -558,27 +623,63 @@ int main(void)
 		  else if(yaw_para.pid_result<-yaw_limit)
 			  yaw_para.pid_result=-yaw_limit;
 
-		  //---------------------------------------------------------------------------------------------------------------------- motor update
-
-		  if(status_data.throttle>1000){
-			  motor[0]=status_data.throttle+(int32_t)(pitch_para.dual_pid_result+roll_para.dual_pid_result+yaw_para.pid_result);	//ccw
-			  motor[1]=status_data.throttle+(int32_t)(pitch_para.dual_pid_result-roll_para.dual_pid_result-yaw_para.pid_result);	//cw
-			  motor[2]=status_data.throttle+(int32_t)(roll_para.dual_pid_result-yaw_para.pid_result);	//cw
-			  motor[3]=status_data.throttle+(int32_t)(-roll_para.dual_pid_result+yaw_para.pid_result);	//ccw
-			  motor[4]=status_data.throttle+(int32_t)(-pitch_para.dual_pid_result+roll_para.dual_pid_result+yaw_para.pid_result);	//ccw
-			  motor[5]=status_data.throttle+(int32_t)(-pitch_para.dual_pid_result-roll_para.dual_pid_result-yaw_para.pid_result);	//cw
-
-			  for(uint8_t i=0;i<6;i++){
-				  if(motor[i]<1000)
-					  motor[i]=1000;
-				  else if(motor[i]>1900)
-					  motor[i]=1900;
-			  }
+#ifdef motor_TEST
+		  if(yaw_d>0.0){
+			  packet1.yaw_d_sum+=yaw_d;
 		  }
 		  else{
+			  packet1.yaw_d_sum-=yaw_d;
+		  }
+#endif
+
+		  //---------------------------------------------------------------------------------------------------------------------- motor update
+
+		  if(Drone_mode == Error){
 			  motor[0]=motor[1]=motor[2]=motor[3]=motor[4]=motor[5]=1000;
 		  }
+		  else{
+			  if(status_data.throttle>1000){
+				  motor[0]=status_data.throttle+(int32_t)(pitch_para.dual_pid_result+roll_para.dual_pid_result+yaw_para.pid_result);	//ccw
+				  motor[1]=status_data.throttle+(int32_t)(pitch_para.dual_pid_result-roll_para.dual_pid_result-yaw_para.pid_result);	//cw
+				  motor[2]=status_data.throttle+(int32_t)(roll_para.dual_pid_result-yaw_para.pid_result);	//cw
+				  motor[3]=status_data.throttle+(int32_t)(-roll_para.dual_pid_result+yaw_para.pid_result);	//ccw
+				  motor[4]=status_data.throttle+(int32_t)(-pitch_para.dual_pid_result+roll_para.dual_pid_result+yaw_para.pid_result);	//ccw
+				  motor[5]=status_data.throttle+(int32_t)(-pitch_para.dual_pid_result-roll_para.dual_pid_result-yaw_para.pid_result);	//cw
 
+				  for(uint8_t i=0;i<6;i++){
+					  if(motor[i]<1000)
+						  motor[i]=1000;
+					  else if(motor[i]>1900)
+						  motor[i]=1900;
+				  }
+			  }
+			  else{
+				  motor[0]=motor[1]=motor[2]=motor[3]=motor[4]=motor[5]=1000;
+			  }
+		  }
+
+
+#ifdef motor_TEST
+		  for(uint8_t i=0;i<6;i++){
+			  motor_sum[i]+=(uint32_t)(motor[i]-1000);
+			  motor_sum[i]-=(uint32_t)motor_arr[i][motor_arr_pointer];
+			  motor_arr[i][motor_arr_pointer]=(uint16_t)(motor[i]-1000);
+
+			  packet1.motor_mean[i]=((uint16_t)motor_sum[i]/MOTOR_ARR_NUM)+1000;
+
+			  if(motor[i] - pre_motor[i]>0){
+				  packet1.motor_d_sum[i]+=(uint16_t)(motor[i]-pre_motor[i]);
+			  }
+			  else{
+				  packet1.motor_d_sum[i]+=(uint16_t)(pre_motor[i]-motor[i]);
+			  }
+			  pre_motor[i]=motor[i];
+		  }
+
+		  motor_arr_pointer++;
+		  if(motor_arr_pointer==MOTOR_ARR_NUM)
+			  motor_arr_pointer=0;
+#endif
 
 		  //motor_counter++;
 		  if(motor_counter>80){
@@ -600,10 +701,8 @@ int main(void)
 
 //=========================================================================================================================================================== mag, baro
 	  else if(condition_mag_baro){
-		  if(mag_baro==0){
-			  //--------------------------------- hmc5883.h
-
-			  //---------------------------------
+		  //------------------------------------------------------------------------------------ magneto
+		  if(mag_baro<2){
 			  float radpitch, radroll;
 			  float xh,yh;
 			  float dif_yaw;
@@ -678,23 +777,102 @@ int main(void)
 					  mag_counter=0;
 				  }
 
-				  mag_baro=1;
+				  mag_baro++;
 				  mag_reg_address=0x03;
 				  I2C_Transmit(&hmc5883.i2c,hmc5883.magneto_address,&mag_reg_address,1);
 				  I2C_Receive_DMA(&hmc5883.i2c,&i2c3_DMA,hmc5883.magneto_address,(uint32_t)mag_dma_buf,LL_I2C_DMA_GetRegAddr(I2C3),6);
 			  }
 		  }
+
+		  //------------------------------------------------------------------------------------ baro
 		  else{
+			  SBI(ms5611.ms_condition,0);
+			  Calculate_Temp_Pressure(&ms5611);
+			  if(ms5611.pressure_ready_flag){
+				  float pressure_dif;
 
+				  pressure_fast=(float)ms5611.pressure;
+				  pressure_slow=pressure_slow * 0.985 + pressure_fast * 0.015;
 
+				  pressure_dif=pressure_slow - pressure_fast;
+
+				  if(pressure_dif > 8)
+					  pressure_dif=8;
+				  else if(pressure_dif<-8)
+					  pressure_dif=-8;
+
+				  if(pressure_dif>1 || pressure_dif<-1)
+					  pressure_slow-=pressure_dif/6;
+
+				  actual_pressure=pressure_slow;
+
+				  if(Drone_mode==GPS_holding && gps_set_pos){
+					  float altitude_error;
+					  float altitude_p,altitude_d;
+					  float temp_altitude_throttle;
+
+					  if(altitude_set_pos==0){
+						  set_pressure=actual_pressure;
+						  altitude_set_pos=1;
+					  }
+					  else{
+						  altitude_error=set_pressure-actual_pressure;
+
+						  altitude_p = baro_p * altitude_error;
+						  altitude_d = baro_d * (actual_pressure - pre_actual_pressure);
+						  if(altitude_mem < 60 && altitude_mem > -60){
+							  altitude_mem += baro_i * altitude_error;
+						  }
+						  else{
+							  if(altitude_mem > 59.5 && altitude_error < 0.0){
+								  altitude_mem += baro_i * altitude_error;
+							  }
+							  if(altitude_mem < -59.5 && altitude_error > 0.0){
+								  altitude_mem += baro_i * altitude_error;
+							  }
+						  }
+						  temp_altitude_throttle = altitude_p + altitude_d + altitude_mem;
+						  if(temp_altitude_throttle > 100)
+							  temp_altitude_throttle = 100;
+						  else if(temp_altitude_throttle < -100)
+							  temp_altitude_throttle = -100;
+#ifdef baro_TEST
+				packet.set_pressure=set_pressure;
+				packet.actual_pressure=actual_pressure;
+				packet.altitude_throttle=temp_altitude_throttle;
+#endif
+						  status_data.throttle -=(int32_t)temp_altitude_throttle;
+					  }
+				  }
+#ifdef baro_TEST
+				  else{
+					  packet.set_pressure=0.0;
+					  packet.actual_pressure=actual_pressure;
+					  packet.altitude_throttle=0.0;
+				  }
+#endif
+
+				  pre_actual_pressure=actual_pressure;
+
+				  //baro_counter++;
+				  if(baro_counter>50){
+					  printf("set:%.2f\r\n",set_pressure);
+					  printf("a_p:%.2f\n\n\r",actual_pressure);
+					  //printf("temperature:%d\r\npressure:%d\n\n\r",ms5611.temperature,ms5611.pressure);
+					  baro_counter=0;
+				  }
+			  }
+
+			  ms5611.pressure_ready_flag=0;
 			  mag_baro=0;
 		  }
+
+
 		  condition_mag_baro=0;
 	  }
 
 //=========================================================================================================================================================== GPS
 	  else if(condition_gps){
-
 		  //-----------------------------
 		  float lat_dif=0.0,lon_dif=0.0;
 		  float distance=0.0;
@@ -714,7 +892,7 @@ int main(void)
 		  if(gps_data.sec_lat>0.1 && gps_data.sec_lon>0.1){
 			  LL_GPIO_TogglePin(GPIOE,LL_GPIO_PIN_8);
 
-			  if(Drone_mode==GPS){			// GPS mode SET
+			  if(Drone_mode==GPS_holding){			// GPS mode SET
 				  if(gps_set_pos==0){
 					  gps_set_lat=gps_data.sec_lat;
 					  gps_set_lon=gps_data.sec_lon;
@@ -788,7 +966,7 @@ int main(void)
 
 		  condition_gps=0;
 	  }
-	  else if(Drone_mode==GPS && gps_set_pos && condition_gps_2ms){
+	  else if(Drone_mode==GPS_holding && gps_set_pos && condition_gps_2ms){
 
 		  gps_set_pitch=(temp_pitch_p*gps_p)+(temp_pitch_speed)*gps_d;
 		  gps_set_roll=(temp_roll_p*gps_p)+(temp_roll_speed)*gps_d;
@@ -844,74 +1022,66 @@ int main(void)
 		  condition_gps_2ms=0;
 	  }
 
+//=========================================================================================================================================================== Normal Mode
 	  else if(Drone_mode==Normal && normal_mode_setting==0){
 		  gps_set_lat=0.0;
 		  gps_set_lon=0.0;
-
 		  pitch_p=0.0;
 		  roll_p=0.0;
-
 		  pre_pitch_p=0;
 		  pre_roll_p=0;
-
 		  gps_set_pitch=0;
 		  gps_set_roll=0;
-
 		  gps_set_pos=0;
+
+		  altitude_set_pos=0;
+		  altitude_mem=0.0;
+
 		  normal_mode_setting=1;
 	  }
 //=========================================================================================================================================================== follow me
 
 //=========================================================================================================================================================== nrf24l01 txdata
+
 	  if(condition_nrf24l01==1){
 		  uint8_t status;
-
 		  nrf_status(&nrf_tx,&status);
 		  if(status & 0x01){
 			  flush_TX(&nrf_tx);
 			  //printf("1:%.2X\r\n",status);
 		  }
 		  if(status&(0x10)){
-		  	status|= (0x01<<4);
+			status|= (0x01<<4);
 		  }
 		  if(status&(0x20)){
-		  	status|=(0x01<<5);
+			status|=(0x01<<5);
 		  }
 		  nrf_Write(&nrf_tx,0x07,&status);
-		  if(nrf_data1_2==1){
-			  nrf24l01_counter++;
-			  txdata1.nrf_address=0xA0;
-			  txdata1.id='C';
-			  txdata1.nrf_tot_counter=nrf24l01_counter;
-			  txdata1.motor[0]=motor[0];
-			  txdata1.motor[1]=motor[1];
-			  txdata1.motor[2]=motor[2];
-			  txdata1.motor[3]=motor[3];
-			  txdata1.motor[4]=motor[4];
-			  txdata1.motor[5]=motor[5];
 
+		  nrf24l01_counter++;
 
-			  txdata2.nrf_address=0xA0;
-			  txdata2.id='D';
-			  txdata2.nrf_tot_counter=nrf24l01_counter;
-			  txdata2.pitch=status_data.pitch;
-			  txdata2.roll=status_data.roll;
-			  txdata2.yaw=status_data.yaw;
-			  txdata2.dif_yaw=status_data.dif_yaw;
-			  txdata2.gps_set_pitch=gps_set_pitch;
-			  txdata2.gps_set_roll=gps_set_roll;
-
-			  LL_GPIO_ResetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
-			  SPI_DMA_TransmitReceive(SPI3,DMA1,DMA1,LL_DMA_STREAM_7,LL_DMA_STREAM_0,(uint8_t*)&txdata1, nrf_rxdata,30);
-			  nrf_data1_2=2;
+#if defined motor_TEST
+		  packet2.reg=0xA0;
+		  packet2.id='C';
+		  packet2.counter=nrf24l01_counter;
+		  for(int i=0;i<6;i++){
+			  packet2.motor_mean[i]=packet1.motor_mean[i];
+			  packet2.motor_d_sum[i]=packet1.motor_d_sum[i];
+			  packet1.motor_d_sum[i]=0;
 		  }
-		  else if(nrf_data1_2==2){
+		  packet2.yaw_d_sum=packet1.yaw_d_sum;
+		  packet1.yaw_d_sum=0.0;
 
-			  LL_GPIO_ResetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
-			  SPI_DMA_TransmitReceive(SPI3,DMA1,DMA1,LL_DMA_STREAM_7,LL_DMA_STREAM_0,(uint8_t*)&txdata2, nrf_rxdata,30);
-			  nrf_data1_2=1;
-		  }
-
+		  LL_GPIO_ResetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
+		  SPI_DMA_TransmitReceive(SPI3,DMA1,DMA1,LL_DMA_STREAM_7,LL_DMA_STREAM_0,(uint8_t*)&packet2, nrf_rxdata,packet_size+1);
+		  memset(&packet1,0,sizeof(DATA_TYPE1));
+#elif defined baro_TEST
+		  packet.reg=0xA0;
+		  packet.id='D';
+		  packet.counter=nrf24l01_counter;
+		  LL_GPIO_ResetOutputPin(nrf_tx.chip_select_port,nrf_tx.chip_select_pin);
+		  SPI_DMA_TransmitReceive(SPI3,DMA1,DMA1,LL_DMA_STREAM_7,LL_DMA_STREAM_0,(uint8_t*)&packet, nrf_rxdata,packet_size+1);
+#endif
 		  condition_nrf24l01=2;
 	  }
 
@@ -979,14 +1149,17 @@ int main(void)
 		  }
 
 		  //---------------------------------------------------------------------- mode
-		  if(timer[4]<1300)
+		  if(status_data.pitch>89 || status_data.pitch<-89 || status_data.roll>89 || status_data.roll<-89)
+			  Drone_mode=Error;
+		  else if(timer[4]<1300)
 			  Drone_mode=Unarmed;
 		  else if(timer[4]>1800){
 			  if(timer[5]<1300)
 				  Drone_mode=Normal;
 			  else if(timer[5]>1900)
-				  Drone_mode=GPS;
+				  Drone_mode=GPS_holding;
 		  }
+
 		  //----------------------------------------------------------------------
 		  //uart_counter++;
 		  if(uart_counter>100){
